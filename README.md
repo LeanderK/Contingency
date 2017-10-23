@@ -1,0 +1,4 @@
+# Requirements
+ - tensorflow
+ - jupyter
+ - numpy
