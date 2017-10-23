@@ -96,17 +96,17 @@ def withoutContingency(features, labels, is_training):
        
     return (acc, trainWithout)
 
-def withRandomContingency(features, labels):
+def withRandomContingency(features, labels, is_training):
     (loss_op, acc, acc_op) = model_fn(features, labels, is_training)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = optimizer.minimize(loss_op,
                                 global_step=tf.train.get_global_step())
 
     def trainingRandomStep(iteration, session, train_images, train_labels):
-        randomImages = nprandom.random(num_input, 5)
-        labels = np.zeroes(5)
-        resultingImg = train_images.concatenate(randomImages)
-        resultingLab = train_labels.concatenate(labels)
+        randomImages = nprandom.random((5, num_input))
+        randlabels = np.zeros(5)
+        resultingImg = np.concatenate((train_images,randomImages))
+        resultingLab = np.concatenate((train_labels,randlabels))
         a, a_op, t = session.run([acc, acc_op, train_op], feed_dict={
                 features.name: resultingImg,
                 labels.name: resultingLab,
