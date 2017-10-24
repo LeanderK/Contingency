@@ -17,12 +17,12 @@ from numpy import random as nprandom
 
 # Training Parameters
 learning_rate = 0.001
-num_steps = 300
+num_steps = 200
 batch_size = 128
 
 # Network Parameters
 num_input = 784 # MNIST data input (img shape: 28*28)
-num_classes = 2 # MNIST total classes (0-9 digits)
+num_classes = 5 # MNIST total classes (0-9 digits)
 dropout = 0.75 # Dropout, probability to keep units
 
 
@@ -72,23 +72,26 @@ def model_fn(features, labels, is_training):
     pred_classes = tf.argmax(logits, axis=1)
     pred_probas = tf.nn.softmax(logits)
 
+    correct_prediction = tf.equal(pred_classes, tf.cast(labels, dtype=tf.int64))
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
     # Evaluate the accuracy of the model
-    acc, acc_op = tf.metrics.accuracy(labels=labels, predictions=pred_classes)
+    #acc, acc_op = tf.metrics.accuracy(labels=labels, predictions=pred_classes)
 
     # Define loss and optimizer
     loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits=logits, labels=tf.cast(labels, dtype=tf.int32)))
     
-    return (loss_op, acc, acc_op)
+    return (loss_op, accuracy)
 
 def withoutContingency(features, labels, is_training):
-    (loss_op, acc, acc_op) = model_fn(features, labels, is_training)
+    (loss_op, acc) = model_fn(features, labels, is_training)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = optimizer.minimize(loss_op,
                                 global_step=tf.train.get_global_step())
 
     def trainWithout(iteration, session, train_images, train_labels):
-        a, a_op, t = session.run([acc, acc_op, train_op], feed_dict={
+        a, t = session.run([acc, train_op], feed_dict={
                 features.name: train_images,
                 labels.name: train_labels,
                 is_training.name: True})  
@@ -97,17 +100,51 @@ def withoutContingency(features, labels, is_training):
     return (acc, trainWithout)
 
 def withRandomContingency(features, labels, is_training):
-    (loss_op, acc, acc_op) = model_fn(features, labels, is_training)
+    (loss_op, acc) = model_fn(features, labels, is_training)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = optimizer.minimize(loss_op,
                                 global_step=tf.train.get_global_step())
 
     def trainingRandomStep(iteration, session, train_images, train_labels):
-        randomImages = nprandom.random((5, num_input))
-        randlabels = np.zeros(5)
+        randomImages = nprandom.random((30, num_input))
+        randlabels = np.zeros(30)
         resultingImg = np.concatenate((train_images,randomImages))
         resultingLab = np.concatenate((train_labels,randlabels))
-        a, a_op, t = session.run([acc, acc_op, train_op], feed_dict={
+        if iteration % 100 == 0:
+            print("resultingImgshape", resultingImg.shape)
+            print("train_imagesshape", train_images.shape)
+            print("resultingLabshape", resultingLab.shape)
+            print("train_labelsshape", train_labels.shape)
+        a, t = session.run([acc, train_op], feed_dict={
+                features.name: resultingImg,
+                labels.name: resultingLab,
+                is_training.name: True})  
+        return a
+    return (acc, trainingRandomStep)
+
+def withContingency(features, labels, is_training):
+    (loss_op, acc) = model_fn(features, labels, is_training)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    train_op = optimizer.minimize(loss_op,
+                                global_step=tf.train.get_global_step())
+    gen_images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
+
+    #TODO calculate diff in an efficient way
+
+    max_fitness = loss_op - tf.reduce_mean(diff)
+    optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+    gen_op = optimizer2.minimize(-1 * max_fitness,
+                                global_step=tf.train.get_global_step())
+    def trainingRandomStep(iteration, session, train_images, train_labels):
+        randomImages = nprandom.random((5, num_input))
+        randlabels = np.zeros(5)
+        
+        if iteration % 50 == 0:
+            print("resultingImgshape", resultingImg.shape)
+            print("train_imagesshape", train_images.shape)
+            print("resultingLabshape", resultingLab.shape)
+            print("train_labelsshape", train_labels.shape)
+        a, t = session.run([acc, train_op], feed_dict={
                 features.name: resultingImg,
                 labels.name: resultingLab,
                 is_training.name: True})  
@@ -126,22 +163,23 @@ def run(model_fn):
         # Build the Estimator
 
         for iteration in range(num_steps):
-            (train_im, train_la) = only_zero_one(*mnist.train.next_batch(batch_size))
+            (train_im, train_la) = only_valid(*mnist.train.next_batch(batch_size))
             a = train_fn(iteration, session, train_im, train_la)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
-            if iteration % 100 == 0:
+            if iteration % 50 == 0:
+                print("Batch labels", np.unique(train_la, return_counts=True))
                 print("Training Accuracy in iteration ", iteration, ":", a)
 
         (eval_im, eval_la) = relabel(mnist.test)
         a = session.run(acc_eval, feed_dict={images: eval_im, labels: eval_la, is_training.name: False})
         print("Final Accuracy ", iteration, ":", a)
 
-def only_zero_one(images, labels):
-    indices = np.where(labels <= 1 )
+def only_valid(images, labels):
+    indices = np.where(labels < num_classes )
     return (images[indices], labels[indices])
 
 def relabel(dataset):
-    indices = np.where(dataset.labels != 1 )
+    indices = np.where(dataset.labels >= num_classes )
     relabel = np.copy(dataset.labels)
     relabel[indices] = 0
     return (dataset.images, relabel)
