@@ -127,23 +127,36 @@ def withContingency(features, labels, is_training):
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = optimizer.minimize(loss_op,
                                 global_step=tf.train.get_global_step())
-    gen_images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
+    num_adversarial = 10
+    gen_images = tf.Variable(tf.float32, shape=[num_adversarial, num_input], name="images")
 
-    #TODO calculate diff in an efficient way
+    diff = tf.contrib.gan.eval.frechet_classifier_distance(features, 
+        gen_images, 
+        #I don't really understand what this is used for...
+        lambda imges : model_fn(imges, labels, is_training))
 
-    max_fitness = loss_op - tf.reduce_mean(diff)
+    adversial_fitness = loss_op - diff
     optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
-    gen_op = optimizer2.minimize(-1 * max_fitness,
-                                global_step=tf.train.get_global_step())
+    adv_op = optimizer2.minimize(-1 * adversial_fitness,
+                                global_step=tf.train.get_global_step(),
+                                var_list=gen_images)
     def trainingRandomStep(iteration, session, train_images, train_labels):
-        randomImages = nprandom.random((5, num_input))
-        randlabels = np.zeros(5)
+        randomImages = nprandom.random((num_adversarial, num_input))
+        randlabels = np.zeros(num_adversarial)
         
         if iteration % 50 == 0:
             print("resultingImgshape", resultingImg.shape)
             print("train_imagesshape", train_images.shape)
             print("resultingLabshape", resultingLab.shape)
             print("train_labelsshape", train_labels.shape)
+
+        #TODO finish coding the minimizer, obtain calcuated values and pass them to the session below
+        session.run(adv_op, feed_dict={
+                features.name: train_images,
+                labels.name: train_labels,
+                gen_images: randomImages,
+                is_training.name: True})
+
         a, t = session.run([acc, train_op], feed_dict={
                 features.name: resultingImg,
                 labels.name: resultingLab,
