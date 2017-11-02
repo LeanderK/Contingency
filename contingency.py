@@ -6,14 +6,14 @@ import argparse
 import sys
 import tempfile
 
+import tensorflow as tf
+import numpy as np
+from numpy import random as nprandom
+
 # Adapted from https://github.com/aymericdamien/TensorFlow-Examples/blob/master/examples/3_NeuralNetworks/convolutional_network.py
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets("/tmp/data/", one_hot=False)
 contingency = np.empty(shape=(784, 0))
-
-import tensorflow as tf
-import numpy as np
-from numpy import random as nprandom
 
 # Training Parameters
 learning_rate = 0.001
@@ -190,7 +190,8 @@ def run(model_fn):
         for iteration in range(num_steps):
             (training, cont_training) = next_batch(batch_size, batch_size)
             (a, cont) = train_fn(iteration, session, training, cont_training)
-            contingency = np.concatenate((contingency,cont))
+            nonlocal contingency
+            contingency = np.concatenate((contingency, cont))
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 print("Batch labels", np.unique(train_la, return_counts=True))
