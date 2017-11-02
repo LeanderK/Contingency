@@ -171,6 +171,7 @@ def withContingency(features, labels, is_training):
                 labels.name: train_labels,
                 cont_batch.name: cont_img,
                 cont_batch_la.name: cont_labels,
+                cont_beta.name: 1,
                 is_training.name: True})  
         return (a, adv_images)
     return (acc, trainingRandomStep)
