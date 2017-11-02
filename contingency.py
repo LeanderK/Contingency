@@ -7,9 +7,9 @@ import sys
 import tempfile
 
 # Adapted from https://github.com/aymericdamien/TensorFlow-Examples/blob/master/examples/3_NeuralNetworks/convolutional_network.py
-
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets("/tmp/data/", one_hot=False)
+contingency = np.empty(shape=(784, 0))
 
 import tensorflow as tf
 import numpy as np
@@ -90,12 +90,13 @@ def withoutContingency(features, labels, is_training):
     train_op = optimizer.minimize(loss_op,
                                 global_step=tf.train.get_global_step())
 
-    def trainWithout(iteration, session, train_images, train_labels):
+    def trainWithout(iteration, session, training, cont_training):
+        (train_images, train_labels) = training
         a, t = session.run([acc, train_op], feed_dict={
                 features.name: train_images,
                 labels.name: train_labels,
                 is_training.name: True})  
-        return a
+        return (a, np.empty(shape=(784, 0)))
        
     return (acc, trainWithout)
 
@@ -105,32 +106,35 @@ def withRandomContingency(features, labels, is_training):
     train_op = optimizer.minimize(loss_op,
                                 global_step=tf.train.get_global_step())
 
-    def trainingRandomStep(iteration, session, train_images, train_labels):
+    def trainingRandomStep(iteration, session, training, cont_training):
+        (train_images, train_labels) = training
         randomImages = nprandom.random((30, num_input))
         randlabels = np.zeros(30)
         resultingImg = np.concatenate((train_images,randomImages))
         resultingLab = np.concatenate((train_labels,randlabels))
-        if iteration % 100 == 0:
-            print("resultingImgshape", resultingImg.shape)
-            print("train_imagesshape", train_images.shape)
-            print("resultingLabshape", resultingLab.shape)
-            print("train_labelsshape", train_labels.shape)
         a, t = session.run([acc, train_op], feed_dict={
                 features.name: resultingImg,
                 labels.name: resultingLab,
                 is_training.name: True})  
-        return a
+        return (a, np.empty(shape=(784, 0)))
     return (acc, trainingRandomStep)
 
 def withContingency(features, labels, is_training):
-    (loss_op, acc) = model_fn(features, labels, is_training)
+    (orig_loss_op, acc) = model_fn(features, labels, is_training)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_op = optimizer.minimize(loss_op,
+    cont_batch = tf.Variable(tf.float32, shape=[None, num_input], name="cont_batch")
+    cont_batch_la = tf.Variable(tf.float32, shape=[None], name="cont_batch_labels")
+    #scalar that controls contingency 
+    cont_beta = tf.Variable(tf.float32, shape=[], name="cont_batch")
+
+    loss_with_cont = orig_loss_op + cont_beta * model_fn(cont_batch, cont_batch_la, is_training)
+    train_op = optimizer.minimize(loss_with_cont,
                                 global_step=tf.train.get_global_step())
     num_adversarial = 10
-    gen_images = tf.Variable(tf.float32, shape=[num_adversarial, num_input], name="images")
+    gen_images = tf.Variable(tf.float32, shape=[num_adversarial, num_input], name="gen_images")
 
-    diff = tf.contrib.gan.eval.frechet_classifier_distance(features, 
+    diff = tf.contrib.gan.eval.frechet_classifier_distance(
+        features, 
         gen_images, 
         #I don't really understand what this is used for...
         lambda imges : model_fn(imges, labels, is_training))
@@ -140,28 +144,31 @@ def withContingency(features, labels, is_training):
     adv_op = optimizer2.minimize(-1 * adversial_fitness,
                                 global_step=tf.train.get_global_step(),
                                 var_list=gen_images)
-    def trainingRandomStep(iteration, session, train_images, train_labels):
+    numGradAscentIter = 5
+    def trainingContStep(iteration, session, training, cont_training):
+        (train_images, train_labels) = training
+        (cont_img, cont_labels) = cont_training
+
         randomImages = nprandom.random((num_adversarial, num_input))
         randlabels = np.zeros(num_adversarial)
-        
-        if iteration % 50 == 0:
-            print("resultingImgshape", resultingImg.shape)
-            print("train_imagesshape", train_images.shape)
-            print("resultingLabshape", resultingLab.shape)
-            print("train_labelsshape", train_labels.shape)
+        session.run(gen_images.assign(randomImages))
 
-        #TODO finish coding the minimizer, obtain calcuated values and pass them to the session below
-        session.run(adv_op, feed_dict={
-                features.name: train_images,
-                labels.name: train_labels,
-                gen_images: randomImages,
-                is_training.name: True})
+        for iteration in range(numGradAscentIter):
+            #TODO finish coding the minimizer, obtain calcuated values and pass them to the session below
+            session.run(adv_op, feed_dict={
+                    features.name: train_images,
+                    labels.name: train_labels,
+                    is_training.name: False})
+
+        adv_images = session.run(gen_images)
+        resultingImg = np.concatenate((train_images,adv_images))
+        resultingLab = np.concatenate((train_labels,randlabels))
 
         a, t = session.run([acc, train_op], feed_dict={
                 features.name: resultingImg,
                 labels.name: resultingLab,
                 is_training.name: True})  
-        return a
+        return (a, adv_images)
     return (acc, trainingRandomStep)
 
 def run(model_fn): 
@@ -176,16 +183,20 @@ def run(model_fn):
         # Build the Estimator
 
         for iteration in range(num_steps):
-            (train_im, train_la) = only_valid(*mnist.train.next_batch(batch_size))
-            a = train_fn(iteration, session, train_im, train_la)
+            (training, cont_training) = next_batch(batch_size, batch_size)
+            (a, cont) = train_fn(iteration, session, training, cont_training)
+            contingency = np.concatenate((contingency,cont))
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 print("Batch labels", np.unique(train_la, return_counts=True))
                 print("Training Accuracy in iteration ", iteration, ":", a)
 
-        (eval_im, eval_la) = relabel(mnist.test)
-        a = session.run(acc_eval, feed_dict={images: eval_im, labels: eval_la, is_training.name: False})
-        print("Final Accuracy ", iteration, ":", a)
+        (eval_rel_im, eval_rel_la) = relabel(mnist.test)
+        (eval_valid_im, eval_valid_la) = only_valid(mnist.test)
+        a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
+        print("Final Accuracy on all relabeled classes", iteration, ":", a)
+        a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
+        print("Final Accuracy on only valid classes", iteration, ":", a)
 
 def only_valid(images, labels):
     indices = np.where(labels < num_classes )
@@ -196,3 +207,12 @@ def relabel(dataset):
     relabel = np.copy(dataset.labels)
     relabel[indices] = 0
     return (dataset.images, relabel)
+
+def next_batch(batch_size_training, batch_size_contingency):
+    training = only_valid(*mnist.train.next_batch(batch_size))
+    indices = np.arange(0 , len(contingency))
+    np.random.shuffle(indices)
+    indices = indices[:batch_size_contingency]
+    contingency_trainig = contingency[indices]
+    return (training, contingency_trainig)
+
