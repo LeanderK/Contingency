@@ -133,6 +133,8 @@ def withContingency(features, labels, is_training):
     num_adversarial = 10
     gen_images = tf.Variable(tf.float32, shape=[num_adversarial, num_input], name="gen_images")
 
+    #there is a general myterioum surrounding this function. What does it do exactly? I have not get round 
+    #testing/investigating it yet.
     diff = tf.contrib.gan.eval.frechet_classifier_distance(
         features, 
         gen_images, 
@@ -150,23 +152,25 @@ def withContingency(features, labels, is_training):
         (cont_img, cont_labels) = cont_training
 
         randomImages = nprandom.random((num_adversarial, num_input))
-        randlabels = np.zeros(num_adversarial)
+        zerolabels = np.zeros(num_adversarial)
         session.run(gen_images.assign(randomImages))
 
         for iteration in range(numGradAscentIter):
             #TODO finish coding the minimizer, obtain calcuated values and pass them to the session below
-            session.run(adv_op, feed_dict={
+            a = session.run(adv_op, feed_dict={
                     features.name: train_images,
                     labels.name: train_labels,
                     is_training.name: False})
 
         adv_images = session.run(gen_images)
-        resultingImg = np.concatenate((train_images,adv_images))
-        resultingLab = np.concatenate((train_labels,randlabels))
+        cont_img = np.concatenate(cont_img, adv_images)
+        cont_labels = np.concatenate(cont_labels, zerolabels)
 
         a, t = session.run([acc, train_op], feed_dict={
-                features.name: resultingImg,
-                labels.name: resultingLab,
+                features.name: train_images,
+                labels.name: train_labels,
+                cont_batch.name: cont_img,
+                cont_batch_la.name: cont_labels,
                 is_training.name: True})  
         return (a, adv_images)
     return (acc, trainingRandomStep)
@@ -197,6 +201,7 @@ def run(model_fn):
         print("Final Accuracy on all relabeled classes", iteration, ":", a)
         a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
         print("Final Accuracy on only valid classes", iteration, ":", a)
+        # TODO ROC-Courve
 
 def only_valid(images, labels):
     indices = np.where(labels < num_classes )
