@@ -27,9 +27,9 @@ dropout = 0.75 # Dropout, probability to keep units
 
 
 # Create the neural network
-def conv_net(x_dict, n_classes, dropout, is_training):
+def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
     # Define a scope for reusing the variables
-    with tf.variable_scope('ConvNet'):
+    with tf.variable_scope('ConvNet', reuse=should_reuse):
         # TF Estimator input is a dict, in case of multiple inputs
         x = x_dict
 
@@ -62,11 +62,11 @@ def conv_net(x_dict, n_classes, dropout, is_training):
     return out
 
 # Define the model function
-def model_fn(features, labels, is_training):
+def model_fn(features, labels, is_training, should_reuse):
     # Build the neural network
     # Because Dropout have different behavior at training and prediction time, we
     # need to create 2 distinct computation graphs that still share the same weights.
-    logits = conv_net(features, num_classes, dropout, is_training=is_training)
+    logits = conv_net(features, num_classes, dropout, is_training=is_training, should_reuse=should_reuse)
 
     # Predictions
     pred_classes = tf.argmax(logits, axis=1)
@@ -85,7 +85,7 @@ def model_fn(features, labels, is_training):
     return (loss_op, accuracy)
 
 def withoutContingency(features, labels, is_training):
-    (loss_op, acc) = model_fn(features, labels, is_training)
+    (loss_op, acc) = model_fn(features, labels, is_training, False)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = optimizer.minimize(loss_op,
                                 global_step=tf.train.get_global_step())
@@ -101,7 +101,7 @@ def withoutContingency(features, labels, is_training):
     return (acc, trainWithout)
 
 def withRandomContingency(features, labels, is_training):
-    (loss_op, acc) = model_fn(features, labels, is_training)
+    (loss_op, acc) = model_fn(features, labels, is_training, False)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     train_op = optimizer.minimize(loss_op,
                                 global_step=tf.train.get_global_step())
@@ -120,18 +120,18 @@ def withRandomContingency(features, labels, is_training):
     return (acc, trainingRandomStep)
 
 def withContingency(features, labels, is_training):
-    (orig_loss_op, acc) = model_fn(features, labels, is_training)
+    (orig_loss_op, acc) = model_fn(features, labels, is_training, False)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    cont_batch = tf.Variable(tf.float32, shape=[None, num_input], name="cont_batch")
-    cont_batch_la = tf.Variable(tf.float32, shape=[None], name="cont_batch_labels")
+    cont_batch = tf.get_variable(dtype=tf.float32, shape=[None, num_input], name="cont_batch")
+    cont_batch_la = tf.get_variable(dtype=tf.float32, shape=[None], name="cont_batch_labels")
     #scalar that controls contingency 
-    cont_beta = tf.Variable(tf.float32, shape=[], name="cont_batch")
+    cont_beta = tf.get_variable(dtype=tf.float32, shape=[], name="cont_batch")
 
-    loss_with_cont = orig_loss_op + cont_beta * model_fn(cont_batch, cont_batch_la, is_training)
+    loss_with_cont = orig_loss_op + cont_beta * model_fn(cont_batch, cont_batch_la, is_training, True)
     train_op = optimizer.minimize(loss_with_cont,
                                 global_step=tf.train.get_global_step())
     num_adversarial = 10
-    gen_images = tf.Variable(tf.float32, shape=[num_adversarial, num_input], name="gen_images")
+    gen_images = tf.get_variable(dtype=tf.float32, shape=[num_adversarial, num_input], name="gen_images")
 
     #there is a general myterioum surrounding this function. What does it do exactly? I have not get round 
     #testing/investigating it yet.
@@ -190,15 +190,15 @@ def run(model_fn):
         for iteration in range(num_steps):
             (training, cont_training) = next_batch(batch_size, batch_size)
             (a, cont) = train_fn(iteration, session, training, cont_training)
-            nonlocal contingency
+            global contingency
             contingency = np.concatenate((contingency, cont))
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
-                print("Batch labels", np.unique(train_la, return_counts=True))
+                print("Generated contingency in iteration ", iteration, ":", len(contingency))
                 print("Training Accuracy in iteration ", iteration, ":", a)
 
         (eval_rel_im, eval_rel_la) = relabel(mnist.test)
-        (eval_valid_im, eval_valid_la) = only_valid(mnist.test)
+        (eval_valid_im, eval_valid_la) = only_valid(mnist.test.images, mnist.test.labels)
         a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
         print("Final Accuracy on all relabeled classes", iteration, ":", a)
         a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
