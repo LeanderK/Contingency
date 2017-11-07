@@ -168,6 +168,7 @@ def withContingency(features, labels, is_training):
             a = session.run(adv_op, feed_dict={
                     gen_images.name: train_images,
                     gen_labels.name: train_labels,
+                    #we are not training the weights!
                     is_training.name: False})
 
         adv_images = session.run(gen_images)
