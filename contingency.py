@@ -149,6 +149,7 @@ def withContingency(features, labels, is_training):
         lambda imges : conv_net(imges, num_classes, False, is_training=is_training, should_reuse=True))
 
     adversial_fitness = cont_loss_op - diff
+    #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
     optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
     adv_op = optimizer2.minimize(-1 * adversial_fitness,
                                 global_step=tf.train.get_global_step(),
