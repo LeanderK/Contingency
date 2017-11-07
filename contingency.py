@@ -124,11 +124,11 @@ def withContingency(features, labels, is_training):
     (orig_loss_op, acc) = model_fn(features, labels, is_training, False)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     num_adversarial = 10
-    cont_batch = tf.get_variable(dtype=tf.float32, shape=[batch_size + num_adversarial, num_input], name="cont_batch")
-    cont_batch_la = tf.get_variable(dtype=tf.float32, shape=[batch_size + num_adversarial], name="cont_batch_labels")
+    cont_batch = tf.placeholder(dtype=tf.float32, shape=[batch_size + num_adversarial, num_input], name="cont_batch")
+    cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[batch_size + num_adversarial], name="cont_batch_labels")
 
     #scalar that controls contingency 
-    cont_beta = tf.get_variable(dtype=tf.float32, shape=[], name="cont_beta")
+    cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
 
     loss_with_cont = orig_loss_op + cont_beta * model_fn(cont_batch, cont_batch_la, is_training, True)
     train_op = optimizer.minimize(loss_with_cont,
@@ -136,7 +136,7 @@ def withContingency(features, labels, is_training):
 
     #generating the contingengy
     gen_images = tf.get_variable(dtype=tf.float32, shape=[num_adversarial, num_input], name="gen_images")
-    gen_labels = tf.get_variable(dtype=tf.float32, shape=[num_adversarial], name="gen_labels")
+    gen_labels = tf.placeholder(dtype=tf.float32, shape=[num_adversarial], name="gen_labels")
 
     (cont_loss_op, cont_acc) = model_fn(gen_images, gen_labels, is_training, True)
 
@@ -148,7 +148,7 @@ def withContingency(features, labels, is_training):
         #I don't really understand what this is used for...
         lambda imges : conv_net(imges, num_classes, False, is_training=is_training, should_reuse=True))
 
-    adversial_fitness = cont_loss_op - diff
+    adversial_fitness = cont_loss_op #- diff
     #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
     optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
     adv_op = optimizer2.minimize(-1 * adversial_fitness,
@@ -157,7 +157,7 @@ def withContingency(features, labels, is_training):
     numGradAscentIter = 5
     def trainingContStep(iteration, session, training, cont_training):
         (train_images, train_labels) = training
-        (cont_img, cont_labels) = cont_training
+        cont_img = cont_training
 
         # generates the congingency
         randomImages = nprandom.random((num_adversarial, num_input))
@@ -167,21 +167,18 @@ def withContingency(features, labels, is_training):
         for iteration in range(numGradAscentIter):
             #TODO does this work?
             a = session.run(adv_op, feed_dict={
-                    gen_images.name: train_images,
-                    gen_labels.name: train_labels,
+                    gen_labels.name: zerolabels,
                     #we are not training the weights!
                     is_training.name: False})
 
         adv_images = session.run(gen_images)
         cont_img = np.concatenate(cont_img, adv_images)
-        cont_labels = np.concatenate(cont_labels, zerolabels)
+        cont_labels = np.zeros(batch_size + num_adversarial)
 
         #fill with random to archieve a static graph (is only relevant for the initialization)
         to_fill = max(0, (batch_size + num_adversarial) - len(cont_img))
         to_fill_images = nprandom.random((to_fill, num_input))
         cont_img = np.concatenate(cont_img, randomImages)
-        to_fill_zerolabels = np.zeros(to_fill)
-        cont_labels = np.concatenate(cont_labels, to_fill_zerolabels)
 
         a, t = session.run([acc, train_op], feed_dict={
                 features.name: train_images,
@@ -191,7 +188,7 @@ def withContingency(features, labels, is_training):
                 cont_beta.name: 1,
                 is_training.name: True})  
         return (a, adv_images)
-    return (acc, trainingRandomStep)
+    return (acc, trainingContStep)
 
 def run(model_fn): 
     images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
