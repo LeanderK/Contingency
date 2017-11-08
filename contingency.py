@@ -244,16 +244,11 @@ def run(model_fn):
         #print("Final Accuracy on all relabeled classes", iteration, ":", a)
         a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
         print("Final Accuracy on only valid classes", iteration, ":", a)
+        (unex_im, unex_la) = unexpected_data(mnist.test)
+        a = session.run(acc_eval, feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
+        print("Final Accuracy on unexpected data", iteration, ":", a)
 
-        #TODO ugly code...
-        # Compute ROC curve and ROC area for each class
-        # BEWARE: the zero class here is unexpected input, not the zero-mnist class
-        fpr = dict()
-        tpr = dict()
-        roc_auc = dict()
-
-
-        
+        #TODO is this right?
         # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html
         # Compute ROC curve and ROC area for each class
         # BEWARE: the zero class here is unexpected input, not the zero-mnist class
@@ -264,7 +259,6 @@ def run(model_fn):
         pred = session.run(pred_eval, 
                 feed_dict={images: data, is_training.name: False})
         pred_roc = relabel_pred_roc(pred)
-        print("#1", pred.shape, "#2", pred_roc.shape, "#3", mnist.test.labels.shape, "#4", labels.shape)
         fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
         roc_auc[0] = auc(fpr[0], tpr[0])
 
@@ -312,9 +306,9 @@ def test_data_for_label(label):
     indices = np.where(mnist.test.labels == label)
     return (mnist.test.images[indices], mnist.test.labels[indices])
 
-def unexpected_data():
-    indices = np.where(mnist.test.labels >= num_classes)
-    imges = mnist.test.images[indices]
+def unexpected_data(dataset):
+    indices = np.where(dataset.labels >= num_classes)
+    imges = dataset.images[indices]
     #TODO more dynamic defaults
     zeros = np.zeros(indices[0].shape[0])
     return (imges, zeros)
