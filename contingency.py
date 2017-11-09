@@ -92,7 +92,7 @@ def model_fn(features, labels, is_training, should_reuse):
     loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits=logits, labels=tf.cast(labels, dtype=tf.int32)))
     
-    return (loss_op, pred_classes, accuracy)
+    return (loss_op, pred_probas, accuracy)
 
 def withoutContingency(features, labels, is_training):
     (loss_op, pred, acc) = model_fn(features, labels, is_training, False)
@@ -258,11 +258,11 @@ def run(model_fn):
         (data, labels) = relabel_roc(mnist.test)
         pred = session.run(pred_eval, 
                 feed_dict={images: data, is_training.name: False})
-        pred_roc = relabel_pred_roc(pred)
+        pred_roc = 1 - pred[:,0]
         fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
         roc_auc[0] = auc(fpr[0], tpr[0])
 
-        return (fpr, tpr, roc_auc)
+        return (fpr, tpr, roc_auc, pred)
 
 def only_valid(images, labels):
     indices = np.where(labels < num_classes )
@@ -275,15 +275,23 @@ def relabel(dataset):
     return (dataset.images, relabel)
 
 def relabel_roc(dataset):
-    not_null = np.where(dataset.labels > 0)
-    imges = dataset.images[not_null]
-    labels = dataset.labels[not_null]
-    indices = np.where(labels >= num_classes )
-    labels[indices] = 0
-    mask = np.ones(labels.shape,dtype=bool)
-    mask[indices] = False
-    labels[mask] = 1
-    return (imges, labels)
+    #50% unexpected data
+    unexp_indices = np.where(dataset.labels >= num_classes )
+    #we only want unexpected data
+    not_null_valid = np.where(np.logical_and(np.greater(dataset.labels,0), np.less(dataset.labels, num_classes)))
+    length = min(unexp_indices[0].shape[0], not_null_valid[0].shape[0])
+
+    unexp_indices = unexp_indices[:length]
+    unexp_imges = dataset.images[unexp_indices]
+    unexp_labels = np.zeros(unexp_indices[0].shape[0])
+
+    not_null_valid = not_null_valid[:length]
+    valid_imges = dataset.images[not_null_valid]
+    valid_labels = np.ones(not_null_valid[0].shape[0])
+
+    roc_imges = np.concatenate((unexp_imges,valid_imges), axis=0)
+    roc_labels = np.concatenate((unexp_labels,valid_labels), axis=0)
+    return (roc_imges, roc_labels)
 
 def relabel_pred_roc(pred):
     #work around 'builtin_function_or_method' object does not support item assignment
