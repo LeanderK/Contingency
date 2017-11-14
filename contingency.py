@@ -12,311 +12,223 @@ from numpy import random as nprandom
 
 from sklearn.metrics import roc_curve, auc
 
-# Training Parameters
-learning_rate = 0.001
-num_steps = 200
-batch_size = 128
+class Contingency:
+    def __init__(self, learning_rate, num_steps, batch_size, num_adversarial, num_input, num_classes, model_fn, train, test):
+        # Training Parameters
+        self.learning_rate = learning_rate
+        self.num_steps = num_steps
+        self.batch_size = batch_size
+        self.num_adversarial = num_adversarial
 
-# Network Parameters
-num_input = 784 # MNIST data input (img shape: 28*28)
-num_classes = 2 # MNIST total classes (0-9 digits)
-dropout = 0.75 # Dropout, probability to keep units
-num_adversarial = 10 #how many adversarial examples should be generated (if any) per iteration
+        # Network Parameters
+        self.num_input = num_input
+        self.num_classes = num_classes
 
-# Adapted from https://github.com/aymericdamien/TensorFlow-Examples/blob/master/examples/3_NeuralNetworks/convolutional_network.py
-from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets("/tmp/data/", one_hot=False)
+        #TODO max size?
+        self.contingency_imges = np.empty(shape=(0, num_input))
+        self.contingency_labels = np.empty(shape=(0))
 
-#TODO max size?
-contingency_imges = np.empty(shape=(0, num_input))
-contingency_labels = np.empty(shape=(0))
+        self.model_fn = model_fn
 
-def reset_contingency():
-    global contingency_imges
-    contingency_imges = np.empty(shape=(0, num_input))
+        #train/test datasets
+        self.train = train
+        self.test = test
+
+    def reset_contingency(self):
+        self.contingency_imges = np.empty(shape=(0, self.num_input))
 
 
-# Create the neural network
-def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
-    # Define a scope for reusing the variables
-    with tf.variable_scope('ConvNet', reuse=should_reuse):
-        # TF Estimator input is a dict, in case of multiple inputs
-        x = x_dict
+    def withoutContingency(self, features, labels, is_training):
+        (loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes, is_training, False)
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        train_op = optimizer.minimize(loss_op,
+                                    global_step=tf.train.get_global_step())
 
-        # MNIST data input is a 1-D vector of 784 features (28*28 pixels)
-        # Reshape to match picture format [Height x Width x Channel]
-        # Tensor input become 4-D: [Batch Size, Height, Width, Channel]
-        x = tf.reshape(x, shape=[-1, 28, 28, 1])
+        def trainWithout(iteration, session, training, cont_training):
+            (train_images, train_labels) = training
+            a, t = session.run([acc, train_op], feed_dict={
+                    features.name: train_images,
+                    labels.name: train_labels,
+                    is_training.name: True})  
+            empty_imges = np.empty(shape=(0, self.num_input))
+            empty_labels = np.empty(shape=(0))
+            empty = (empty_imges, empty_labels)
+            return (a, empty)
+        
+        return (acc, pred, trainWithout)
 
-        # Convolution Layer with 32 filters and a kernel size of 5
-        conv1 = tf.layers.conv2d(x, 32, 5, activation=tf.nn.relu)
-        # Max Pooling (down-sampling) with strides of 2 and kernel size of 2
-        conv1 = tf.layers.max_pooling2d(conv1, 2, 2)
+    def withRandomContingency(self, features, labels, is_training):
+        return self.withContingency(features, labels, is_training, 0)
 
-        # Convolution Layer with 64 filters and a kernel size of 3
-        conv2 = tf.layers.conv2d(conv1, 64, 3, activation=tf.nn.relu)
-        # Max Pooling (down-sampling) with strides of 2 and kernel size of 2
-        conv2 = tf.layers.max_pooling2d(conv2, 2, 2)
+    def withContingency(self, features, labels, is_training, num_adversarial_train):
+        (orig_loss_op, pred, acc) = self.model_fn(features, labels, is_training, False)
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        cont_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="cont_batch")
+        cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="cont_batch_labels")
 
-        # Flatten the data to a 1-D vector for the fully connected layer
-        fc1 = tf.contrib.layers.flatten(conv2)
+        #scalar that controls contingency 
+        cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
 
-        # Fully connected layer (in tf contrib folder for now)
-        fc1 = tf.layers.dense(fc1, 1024)
-        # Apply Dropout (if is_training is False, dropout is not applied)
-        fc1 = tf.layers.dropout(fc1, rate=dropout, training=is_training)
+        (cont_loss, cont_pred, cont_acc) = self.model_fn(cont_batch, cont_batch_la, is_training, True)
+        loss_with_cont = orig_loss_op + cont_beta * cont_loss
+        train_op = optimizer.minimize(loss_with_cont,
+                                    global_step=tf.train.get_global_step())
 
-        # Output layer, class prediction
-        out = tf.layers.dense(fc1, n_classes)
+        #generating the contingengy
+        gen_images = tf.get_variable(dtype=tf.float32, shape=[self.num_adversarial, self.num_input], name="gen_images")
+        gen_labels = tf.placeholder(dtype=tf.float32, shape=[self.num_adversarial], name="gen_labels")
 
-    return out
+        (gen_loss_op, gen_pred, gen_acc) = self.model_fn(gen_images, gen_labels, is_training, True)
 
-# Define the model function
-def model_fn(features, labels, is_training, should_reuse):
-    # Build the neural network
-    # Because Dropout have different behavior at training and prediction time, we
-    # need to create 2 distinct computation graphs that still share the same weights.
-    logits = conv_net(features, num_classes, dropout, is_training=is_training, should_reuse=should_reuse)
+        #TODO replace
+        #there is a general mysterium surrounding this function. What does it do exactly? I have not get round 
+        #testing/investigating it yet.
+        diff = tf.contrib.gan.eval.frechet_classifier_distance(
+            features, 
+            gen_images, 
+            #I don't really understand what this is used for...
+            lambda imges : conv_net(imges, num_classes, False, is_training=is_training, should_reuse=True))
 
-    # Predictions
-    pred_classes = tf.argmax(logits, axis=1)
-    pred_probas = tf.nn.softmax(logits)
+        adversial_fitness = gen_loss_op #- diff
+        #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
+        optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+        adv_op = optimizer2.minimize(-1 * adversial_fitness,
+                                    global_step=tf.train.get_global_step(),
+                                    var_list=gen_images)
 
-    correct_prediction = tf.equal(pred_classes, tf.cast(labels, dtype=tf.int64))
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+        def trainingContStep(iteration, session, training, cont_training):
+            (train_images, train_labels) = training
+            (cont_img, cont_labels) = cont_training
 
-    # Evaluate the accuracy of the model
-    #acc, acc_op = tf.metrics.accuracy(labels=labels, predictions=pred_classes)
+            # generates the congingency
+            randomImages = nprandom.random((self.num_adversarial, self.num_input))
+            zerolabels = np.zeros(self.num_adversarial)
+            session.run(gen_images.assign(randomImages))
 
-    # Define loss and optimizer
-    loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-        logits=logits, labels=tf.cast(labels, dtype=tf.int32)))
-    
-    return (loss_op, pred_probas, accuracy)
+            for iteration in range(num_adversarial_train):
+                #TODO does this work?
+                a = session.run(adv_op, feed_dict={
+                        gen_labels.name: zerolabels,
+                        #we are not training the weights!
+                        is_training.name: False})
 
-def withoutContingency(features, labels, is_training):
-    (loss_op, pred, acc) = model_fn(features, labels, is_training, False)
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    train_op = optimizer.minimize(loss_op,
-                                global_step=tf.train.get_global_step())
+            adv_images = session.run(gen_images)
+            cont_img = np.concatenate((cont_img, adv_images), axis=0)
+            #TODO redo this, we can't switch contingency labels right now
+            cont_labels = np.zeros(cont_img.shape[0])
 
-    def trainWithout(iteration, session, training, cont_training):
-        (train_images, train_labels) = training
-        a, t = session.run([acc, train_op], feed_dict={
-                features.name: train_images,
-                labels.name: train_labels,
-                is_training.name: True})  
-        empty_imges = np.empty(shape=(0, num_input))
-        empty_labels = np.empty(shape=(0))
-        empty = (empty_imges, empty_labels)
-        return (a, empty)
-       
-    return (acc, pred, trainWithout)
+            a, t = session.run([acc, train_op], feed_dict={
+                    features.name: train_images,
+                    labels.name: train_labels,
+                    cont_batch.name: cont_img,
+                    cont_batch_la.name: cont_labels,
+                    cont_beta.name: 1,
+                    is_training.name: True})  
 
-def withRandomContingency(features, labels, is_training):
-    (orig_loss_op, pred, acc) = model_fn(features, labels, is_training, False)
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    cont_batch = tf.placeholder(dtype=tf.float32, shape=[None, num_input], name="cont_batch")
-    cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="cont_batch_labels")
+            return (a, (adv_images, zerolabels))
+        return (acc, pred, trainingContStep)
 
-    #scalar that controls contingency 
-    cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
+    def run(self, run_fn): 
+        images = tf.placeholder(tf.float32, shape=[None, self.num_input], name="images")
+        labels = tf.placeholder(tf.float32, shape=[None], name="labels")
+        is_training = tf.placeholder(tf.bool, name="is_training")
+        with tf.Session() as session:
+            (acc_eval, pred_eval, train_fn) = run_fn(images, labels, is_training)
+            session.run(tf.global_variables_initializer())
+            session.run(tf.tables_initializer())
+            session.run(tf.local_variables_initializer())
+            # Build the Estimator
 
-    (cont_loss, cont_pred, cont_acc) = model_fn(cont_batch, cont_batch_la, is_training, True)
-    loss_with_cont = orig_loss_op + cont_beta * cont_loss
-    train_op = optimizer.minimize(loss_with_cont,
-                                global_step=tf.train.get_global_step())
+            for iteration in range(self.num_steps):
+                (training, cont_training) = self.next_batch(self.batch_size, (self.batch_size - self.num_adversarial), self.train)
+                (a, cont) = train_fn(iteration, session, training, cont_training)
+                (cont_imgs, cont_la) = cont
+                self.contingency_imges = np.concatenate((self.contingency_imges, cont_imgs), axis=0)
+                self.contingency_labels = np.concatenate((self.contingency_labels, cont_la), axis=0)
+                # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
+                if iteration % 50 == 0:
+                    print("Generated contingency in iteration ", iteration, ":", self.contingency_imges.shape[0])
+                    print("Training Accuracy in iteration ", iteration, ":", a)
 
-    def trainingRandomStep(iteration, session, training, cont_training):
-        (train_images, train_labels) = training
-        randomImages = nprandom.random((num_adversarial, num_input))
-        randlabels = np.zeros(num_adversarial)
-        (cont_train_imges, cont_train_labels) = cont_training
-        cont_imges = np.concatenate((cont_train_imges,randomImages), axis=0)
-        cont_labels = np.concatenate((cont_train_labels,randlabels), axis=0)
+            (eval_rel_im, eval_rel_la) = self.relabel(self.test)
+            (eval_valid_im, eval_valid_la) = self.only_valid(self.test.images, self.test.labels)
+            #a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
+            #print("Final Accuracy on all relabeled classes", iteration, ":", a)
+            a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
+            print("Final Accuracy on only valid classes", iteration, ":", a)
+            (unex_im, unex_la) = self.unexpected_data(self.test)
+            a = session.run(acc_eval, feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
+            print("Final Accuracy on unexpected data", iteration, ":", a)
 
-        a, t = session.run([acc, train_op], feed_dict={
-                features.name: train_images,
-                labels.name: train_labels,
-                cont_batch.name: cont_imges,
-                cont_batch_la.name: cont_labels,
-                cont_beta.name: 1,
-                is_training.name: True})  
-        random_cont = (randomImages, randlabels)
-        return (a, random_cont)
-    return (acc, pred, trainingRandomStep)
+            #TODO is this right?
+            # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html
+            # Compute ROC curve and ROC area for each class
+            # BEWARE: the zero class here is unexpected input, not the zero class
+            fpr = dict()
+            tpr = dict()
+            roc_auc = dict()
+            (data, labels) = self.relabel_roc(self.test)
+            pred = session.run(pred_eval, 
+                    feed_dict={images: data, is_training.name: False})
+            pred_roc = 1 - pred[:,0]
+            fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
+            roc_auc[0] = auc(fpr[0], tpr[0])
 
-def withContingency(features, labels, is_training):
-    (orig_loss_op, pred, acc) = model_fn(features, labels, is_training, False)
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-    cont_batch = tf.placeholder(dtype=tf.float32, shape=[None, num_input], name="cont_batch")
-    cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="cont_batch_labels")
+            return (fpr, tpr, roc_auc, pred)
 
-    #scalar that controls contingency 
-    cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
+    def only_valid(self, images, labels):
+        indices = np.where(labels < self.num_classes )
+        return (images[indices], labels[indices])
 
-    (cont_loss, cont_pred, cont_acc) = model_fn(cont_batch, cont_batch_la, is_training, True)
-    loss_with_cont = orig_loss_op + cont_beta * cont_loss
-    train_op = optimizer.minimize(loss_with_cont,
-                                global_step=tf.train.get_global_step())
+    def relabel(self, dataset):
+        indices = np.where(dataset.labels >= self.num_classes )
+        relabel = np.copy(dataset.labels)
+        relabel[indices] = 0
+        return (dataset.images, relabel)
 
-    #generating the contingengy
-    gen_images = tf.get_variable(dtype=tf.float32, shape=[num_adversarial, num_input], name="gen_images")
-    gen_labels = tf.placeholder(dtype=tf.float32, shape=[num_adversarial], name="gen_labels")
+    def relabel_roc(self, dataset):
+        #50% unexpected data
+        unexp_indices = np.where(dataset.labels >= self.num_classes )
+        #we only want unexpected data
+        not_null_valid = np.where(np.logical_and(np.greater(dataset.labels,0), np.less(dataset.labels, self.num_classes)))
+        length = min(unexp_indices[0].shape[0], not_null_valid[0].shape[0])
 
-    (gen_loss_op, gen_pred, gen_acc) = model_fn(gen_images, gen_labels, is_training, True)
+        unexp_indices = unexp_indices[:length]
+        unexp_imges = dataset.images[unexp_indices]
+        unexp_labels = np.zeros(unexp_indices[0].shape[0])
 
-    #TODO replace
-    #there is a general mysterium surrounding this function. What does it do exactly? I have not get round 
-    #testing/investigating it yet.
-    diff = tf.contrib.gan.eval.frechet_classifier_distance(
-        features, 
-        gen_images, 
-        #I don't really understand what this is used for...
-        lambda imges : conv_net(imges, num_classes, False, is_training=is_training, should_reuse=True))
+        not_null_valid = not_null_valid[:length]
+        valid_imges = dataset.images[not_null_valid]
+        valid_labels = np.ones(not_null_valid[0].shape[0])
 
-    adversial_fitness = gen_loss_op #- diff
-    #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
-    optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
-    adv_op = optimizer2.minimize(-1 * adversial_fitness,
-                                global_step=tf.train.get_global_step(),
-                                var_list=gen_images)
-    numGradAscentIter = 5
-    def trainingContStep(iteration, session, training, cont_training):
-        (train_images, train_labels) = training
-        (cont_img, cont_labels) = cont_training
+        roc_imges = np.concatenate((unexp_imges,valid_imges), axis=0)
+        roc_labels = np.concatenate((unexp_labels,valid_labels), axis=0)
+        return (roc_imges, roc_labels)
 
-        # generates the congingency
-        randomImages = nprandom.random((num_adversarial, num_input))
-        zerolabels = np.zeros(num_adversarial)
-        session.run(gen_images.assign(randomImages))
+    def relabel_pred_roc(self, pred):
+        #work around 'builtin_function_or_method' object does not support item assignment
+        indices = np.where(pred > 0)
+        rel_pred = np.zeros(pred.shape,dtype=int)
+        rel_pred[indices] = 1
+        return rel_pred
 
-        for iteration in range(numGradAscentIter):
-            #TODO does this work?
-            a = session.run(adv_op, feed_dict={
-                    gen_labels.name: zerolabels,
-                    #we are not training the weights!
-                    is_training.name: False})
+    def next_batch(self, batch_size_training, batch_size_contingency, train):
+        training = self.only_valid(*train.next_batch(self.batch_size))
+        indices = np.arange(0 , self.contingency_imges.shape[0])
+        np.random.shuffle(indices)
+        indices = indices[:batch_size_contingency]
+        contingency_trainig_imgs = self.contingency_imges[indices]
+        contingency_trainig_labels = self.contingency_labels[indices]
+        contingency = (contingency_trainig_imgs, contingency_trainig_labels)
+        return (training, contingency)
 
-        adv_images = session.run(gen_images)
-        cont_img = np.concatenate((cont_img, adv_images), axis=0)
-        #TODO redo this, we can't switch contingency labels right now
-        cont_labels = np.zeros(cont_img.shape[0])
+    def test_data_for_label(self, label, test):
+        indices = np.where(test.labels == label)
+        return (test.images[indices], test.labels[indices])
 
-        a, t = session.run([acc, train_op], feed_dict={
-                features.name: train_images,
-                labels.name: train_labels,
-                cont_batch.name: cont_img,
-                cont_batch_la.name: cont_labels,
-                cont_beta.name: 1,
-                is_training.name: True})  
-
-        return (a, (adv_images, zerolabels))
-    return (acc, pred, trainingContStep)
-
-def run(model_fn): 
-    images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
-    labels = tf.placeholder(tf.float32, shape=[None], name="labels")
-    is_training = tf.placeholder(tf.bool, name="is_training")
-    with tf.Session() as session:
-        (acc_eval, pred_eval, train_fn) = model_fn(images, labels, is_training)
-        session.run(tf.global_variables_initializer())
-        session.run(tf.tables_initializer())
-        session.run(tf.local_variables_initializer())
-        # Build the Estimator
-
-        for iteration in range(num_steps):
-            (training, cont_training) = next_batch(batch_size, (batch_size - num_adversarial))
-            (a, cont) = train_fn(iteration, session, training, cont_training)
-            (cont_imgs, cont_la) = cont
-            global contingency_imges
-            global contingency_labels
-            contingency_imges = np.concatenate((contingency_imges, cont_imgs), axis=0)
-            contingency_labels = np.concatenate((contingency_labels, cont_la), axis=0)
-            # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
-            if iteration % 50 == 0:
-                print("Generated contingency in iteration ", iteration, ":", contingency_imges.shape[0])
-                print("Training Accuracy in iteration ", iteration, ":", a)
-
-        (eval_rel_im, eval_rel_la) = relabel(mnist.test)
-        (eval_valid_im, eval_valid_la) = only_valid(mnist.test.images, mnist.test.labels)
-        #a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
-        #print("Final Accuracy on all relabeled classes", iteration, ":", a)
-        a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
-        print("Final Accuracy on only valid classes", iteration, ":", a)
-        (unex_im, unex_la) = unexpected_data(mnist.test)
-        a = session.run(acc_eval, feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
-        print("Final Accuracy on unexpected data", iteration, ":", a)
-
-        #TODO is this right?
-        # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html
-        # Compute ROC curve and ROC area for each class
-        # BEWARE: the zero class here is unexpected input, not the zero-mnist class
-        fpr = dict()
-        tpr = dict()
-        roc_auc = dict()
-        (data, labels) = relabel_roc(mnist.test)
-        pred = session.run(pred_eval, 
-                feed_dict={images: data, is_training.name: False})
-        pred_roc = 1 - pred[:,0]
-        fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
-        roc_auc[0] = auc(fpr[0], tpr[0])
-
-        return (fpr, tpr, roc_auc, pred)
-
-def only_valid(images, labels):
-    indices = np.where(labels < num_classes )
-    return (images[indices], labels[indices])
-
-def relabel(dataset):
-    indices = np.where(dataset.labels >= num_classes )
-    relabel = np.copy(dataset.labels)
-    relabel[indices] = 0
-    return (dataset.images, relabel)
-
-def relabel_roc(dataset):
-    #50% unexpected data
-    unexp_indices = np.where(dataset.labels >= num_classes )
-    #we only want unexpected data
-    not_null_valid = np.where(np.logical_and(np.greater(dataset.labels,0), np.less(dataset.labels, num_classes)))
-    length = min(unexp_indices[0].shape[0], not_null_valid[0].shape[0])
-
-    unexp_indices = unexp_indices[:length]
-    unexp_imges = dataset.images[unexp_indices]
-    unexp_labels = np.zeros(unexp_indices[0].shape[0])
-
-    not_null_valid = not_null_valid[:length]
-    valid_imges = dataset.images[not_null_valid]
-    valid_labels = np.ones(not_null_valid[0].shape[0])
-
-    roc_imges = np.concatenate((unexp_imges,valid_imges), axis=0)
-    roc_labels = np.concatenate((unexp_labels,valid_labels), axis=0)
-    return (roc_imges, roc_labels)
-
-def relabel_pred_roc(pred):
-    #work around 'builtin_function_or_method' object does not support item assignment
-    indices = np.where(pred > 0)
-    rel_pred = np.zeros(pred.shape,dtype=int)
-    rel_pred[indices] = 1
-    return rel_pred
-
-def next_batch(batch_size_training, batch_size_contingency):
-    training = only_valid(*mnist.train.next_batch(batch_size))
-    indices = np.arange(0 , contingency_imges.shape[0])
-    np.random.shuffle(indices)
-    indices = indices[:batch_size_contingency]
-    contingency_trainig_imgs = contingency_imges[indices]
-    contingency_trainig_labels = contingency_labels[indices]
-    contingency = (contingency_trainig_imgs, contingency_trainig_labels)
-    return (training, contingency)
-
-def test_data_for_label(label):
-    indices = np.where(mnist.test.labels == label)
-    return (mnist.test.images[indices], mnist.test.labels[indices])
-
-def unexpected_data(dataset):
-    indices = np.where(dataset.labels >= num_classes)
-    imges = dataset.images[indices]
-    #TODO more dynamic defaults
-    zeros = np.zeros(indices[0].shape[0])
-    return (imges, zeros)
+    def unexpected_data(self, dataset):
+        indices = np.where(dataset.labels >= self.num_classes)
+        imges = dataset.images[indices]
+        #TODO more dynamic defaults
+        zeros = np.zeros(indices[0].shape[0])
+        return (imges, zeros)
