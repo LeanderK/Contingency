@@ -13,7 +13,18 @@ from numpy import random as nprandom
 from sklearn.metrics import roc_curve, auc
 
 class Contingency:
+
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, num_input, num_classes, model_fn):
+        """
+        Parameters
+        ----------
+        learning_rate_adv : int
+            learning rate for the adversarial (if used)
+        num_adversarial : int
+            the number of adversarial examples generated per iteration
+        num_adversarial_train : int
+            adversarial training iterations (if used)
+        """
         # Training Parameters
         self.learning_rate_adv = learning_rate_adv
         self.num_adversarial = num_adversarial
