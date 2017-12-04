@@ -85,5 +85,48 @@ class MNistContingency(contingency.Contingency):
     def __init__(self, learning_rate, num_steps, batch_size, num_adversarial, num_classes):
         if num_classes > max_classes:
             raise ValueError('Max classes is ', max_classes, ' not ', num_classes)
-        contingency.Contingency.__init__(self, learning_rate, num_steps, batch_size, num_adversarial, 
-                            num_input, num_classes, model_fn, mnist.train, mnist.test)
+        contingency.Contingency.__init__(self, learning_rate, learning_rate, num_input, num_classes, model_fn)
+
+def run(run_fn, mnist_cont, batch_size, num_adversarial, num_steps): 
+    images = tf.placeholder(tf.float32, shape=[None, mnist_cont.num_input], name="images")
+    labels = tf.placeholder(tf.float32, shape=[None], name="labels")
+    is_training = tf.placeholder(tf.bool, name="is_training")
+    with tf.Session() as session:
+        (acc_eval, pred_eval, train_fn) = run_fn(images, labels, is_training)
+        session.run(tf.global_variables_initializer())
+        session.run(tf.tables_initializer())
+        session.run(tf.local_variables_initializer())
+        # Build the Estimator
+
+        for iteration in range(num_steps):
+            (training, cont_training) = mnist_cont.next_batch(batch_size, (batch_size - num_adversarial), mnist.train)
+            (a, cont) = train_fn(iteration, session, training, cont_training)
+            # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
+            if iteration % 50 == 0:
+                print("Training Accuracy in iteration ", iteration, ":", a)
+
+        (eval_rel_im, eval_rel_la) = mnist_cont.relabel(mnist.test)
+        (eval_valid_im, eval_valid_la) = mnist_cont.only_valid(mnist.test.images, mnist.test.labels)
+        #a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
+        #print("Final Accuracy on all relabeled classes", iteration, ":", a)
+        a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
+        print("Final Accuracy on only valid classes", iteration, ":", a)
+        (unex_im, unex_la) = mnist_cont.unexpected_data(mnist.test)
+        a = session.run(acc_eval, feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
+        print("Final Accuracy on unexpected data", iteration, ":", a)
+
+        #TODO is this right?
+        # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html
+        # Compute ROC curve and ROC area for each class
+        # BEWARE: the zero class here is unexpected input, not the zero class
+        fpr = dict()
+        tpr = dict()
+        roc_auc = dict()
+        (data, labels) = mnist_cont.relabel_roc(mnist.test)
+        pred = session.run(pred_eval, 
+                feed_dict={images: data, is_training.name: False})
+        pred_roc = 1 - pred[:,0]
+        fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
+        roc_auc[0] = auc(fpr[0], tpr[0])
+
+        return (fpr, tpr, roc_auc, pred)

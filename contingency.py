@@ -13,12 +13,10 @@ from numpy import random as nprandom
 from sklearn.metrics import roc_curve, auc
 
 class Contingency:
-    def __init__(self, learning_rate, num_steps, batch_size, num_adversarial, num_input, num_classes, model_fn, train, test):
+    def __init__(self, learning_rate, learning_rate_adv, num_input, num_classes, model_fn):
         # Training Parameters
         self.learning_rate = learning_rate
-        self.num_steps = num_steps
-        self.batch_size = batch_size
-        self.num_adversarial = num_adversarial
+        self.learning_rate_adv = learning_rate_adv
 
         # Network Parameters
         self.num_input = num_input
@@ -29,10 +27,6 @@ class Contingency:
         self.contingency_labels = np.empty(shape=(0))
 
         self.model_fn = model_fn
-
-        #train/test datasets
-        self.train = train
-        self.test = test
 
     def reset_contingency(self):
         self.contingency_imges = np.empty(shape=(0, self.num_input))
@@ -91,7 +85,7 @@ class Contingency:
 
         adversial_fitness = gen_loss_op #- diff
         #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
-        optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+        optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_adv)
         adv_op = optimizer2.minimize(-1 * adversial_fitness,
                                     global_step=tf.train.get_global_step(),
                                     var_list=gen_images)
@@ -125,60 +119,19 @@ class Contingency:
                     cont_beta.name: 1,
                     is_training.name: True})  
 
+            self.contingency_imges = np.concatenate((adv_images, cont_imgs), axis=0)
+            self.contingency_labels = np.concatenate((zerolabels, cont_la), axis=0)
             return (a, (adv_images, zerolabels))
         return (acc, pred, trainingContStep)
 
-    def run(self, run_fn): 
-        images = tf.placeholder(tf.float32, shape=[None, self.num_input], name="images")
-        labels = tf.placeholder(tf.float32, shape=[None], name="labels")
-        is_training = tf.placeholder(tf.bool, name="is_training")
-        with tf.Session() as session:
-            (acc_eval, pred_eval, train_fn) = run_fn(images, labels, is_training)
-            session.run(tf.global_variables_initializer())
-            session.run(tf.tables_initializer())
-            session.run(tf.local_variables_initializer())
-            # Build the Estimator
+    ################
+    ##helper methods
+    ################
 
-            for iteration in range(self.num_steps):
-                (training, cont_training) = self.next_batch(self.batch_size, (self.batch_size - self.num_adversarial), self.train)
-                (a, cont) = train_fn(iteration, session, training, cont_training)
-                (cont_imgs, cont_la) = cont
-                self.contingency_imges = np.concatenate((self.contingency_imges, cont_imgs), axis=0)
-                self.contingency_labels = np.concatenate((self.contingency_labels, cont_la), axis=0)
-                # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
-                if iteration % 50 == 0:
-                    print("Generated contingency in iteration ", iteration, ":", self.contingency_imges.shape[0])
-                    print("Training Accuracy in iteration ", iteration, ":", a)
-
-            (eval_rel_im, eval_rel_la) = self.relabel(self.test)
-            (eval_valid_im, eval_valid_la) = self.only_valid(self.test.images, self.test.labels)
-            #a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
-            #print("Final Accuracy on all relabeled classes", iteration, ":", a)
-            a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
-            print("Final Accuracy on only valid classes", iteration, ":", a)
-            (unex_im, unex_la) = self.unexpected_data(self.test)
-            a = session.run(acc_eval, feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
-            print("Final Accuracy on unexpected data", iteration, ":", a)
-
-            #TODO is this right?
-            # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html
-            # Compute ROC curve and ROC area for each class
-            # BEWARE: the zero class here is unexpected input, not the zero class
-            fpr = dict()
-            tpr = dict()
-            roc_auc = dict()
-            (data, labels) = self.relabel_roc(self.test)
-            pred = session.run(pred_eval, 
-                    feed_dict={images: data, is_training.name: False})
-            pred_roc = 1 - pred[:,0]
-            fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
-            roc_auc[0] = auc(fpr[0], tpr[0])
-
-            return (fpr, tpr, roc_auc, pred)
 
     def only_valid(self, images, labels):
-        indices = np.where(labels < self.num_classes )
-        return (images[indices], labels[indices])
+    indices = np.where(labels < self.num_classes )
+    return (images[indices], labels[indices])
 
     def relabel(self, dataset):
         indices = np.where(dataset.labels >= self.num_classes )
