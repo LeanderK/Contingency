@@ -13,10 +13,11 @@ from numpy import random as nprandom
 from sklearn.metrics import roc_curve, auc
 
 class Contingency:
-    def __init__(self, learning_rate, learning_rate_adv, num_input, num_classes, model_fn):
+    def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, num_input, num_classes, model_fn):
         # Training Parameters
-        self.learning_rate = learning_rate
         self.learning_rate_adv = learning_rate_adv
+        self.num_adversarial = num_adversarial
+        self.num_adversarial_train = num_adversarial_train
 
         # Network Parameters
         self.num_input = num_input
@@ -32,9 +33,9 @@ class Contingency:
         self.contingency_imges = np.empty(shape=(0, self.num_input))
 
 
-    def withoutContingency(self, features, labels, is_training):
+    def withoutContingency(self, learning_rate, features, labels, is_training):
         (loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes, is_training, False)
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         train_op = optimizer.minimize(loss_op,
                                     global_step=tf.train.get_global_step())
 
@@ -51,12 +52,15 @@ class Contingency:
         
         return (acc, pred, trainWithout)
 
-    def withRandomContingency(self, features, labels, is_training, num_adversarial):
-        return self.withContingency(features, labels, is_training, num_adversarial, 0)
+    def withRandomContingency(self, learning_rate, features, labels, is_training):
+        return self.internalWithContingency(features, learning_rate, labels, is_training, 0)
 
-    def withContingency(self, features, labels, is_training, num_adversarial, num_adversarial_train):
+    def withContingency(self, learning_rate, features, labels, is_training):
+        return self.internalWithContingency(features, learning_rate, labels, is_training, self.num_adversarial_train)
+
+    def internalWithContingency(self, learning_rate, features, labels, is_training, num_adversarial_train):
         (orig_loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes, is_training, False)
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         cont_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="cont_batch")
         cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="cont_batch_labels")
 
@@ -69,23 +73,23 @@ class Contingency:
                                     global_step=tf.train.get_global_step())
 
         #generating the contingengy
-        gen_images = tf.get_variable(dtype=tf.float32, shape=[num_adversarial, self.num_input], name="gen_images")
-        gen_labels = tf.placeholder(dtype=tf.float32, shape=[num_adversarial], name="gen_labels")
+        gen_images = tf.get_variable(dtype=tf.float32, shape=[self.num_adversarial, self.num_input], name="gen_images")
+        gen_labels = tf.placeholder(dtype=tf.float32, shape=[self.num_adversarial], name="gen_labels")
 
         (gen_loss_op, gen_pred, gen_acc) = self.model_fn(gen_images, gen_labels, self.num_classes, is_training, True)
 
         #TODO replace
         #there is a general mysterium surrounding this function. What does it do exactly? I have not get round 
         #testing/investigating it yet.
-        diff = tf.contrib.gan.eval.frechet_classifier_distance(
-            features, 
-            gen_images, 
-            #I don't really understand what this is used for...
-            lambda imges : conv_net(imges, num_classes, False, is_training=is_training, should_reuse=True))
+        #diff = tf.contrib.gan.eval.frechet_classifier_distance(
+        #    features, 
+        #    gen_images, 
+        #    #I don't really understand what this is used for...
+        #    lambda imges : conv_net(imges, num_classes, False, is_training=is_training, should_reuse=True))
 
         adversial_fitness = gen_loss_op #- diff
         #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
-        optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_adv)
+        optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate_adv)
         adv_op = optimizer2.minimize(-1 * adversial_fitness,
                                     global_step=tf.train.get_global_step(),
                                     var_list=gen_images)
@@ -95,11 +99,11 @@ class Contingency:
             (cont_img, cont_labels) = cont_training
 
             # generates the congingency
-            randomImages = nprandom.random((num_adversarial, self.num_input))
-            zerolabels = np.zeros(num_adversarial)
+            randomImages = nprandom.random((self.num_adversarial, self.num_input))
+            zerolabels = np.zeros(self.num_adversarial)
             session.run(gen_images.assign(randomImages))
 
-            for iteration in range(num_adversarial_train):
+            for iteration in range(self.num_adversarial_train):
                 #TODO does this work?
                 a = session.run(adv_op, feed_dict={
                         gen_labels.name: zerolabels,
@@ -119,8 +123,8 @@ class Contingency:
                     cont_beta.name: 1,
                     is_training.name: True})  
 
-            self.contingency_imges = np.concatenate((adv_images, cont_imgs), axis=0)
-            self.contingency_labels = np.concatenate((zerolabels, cont_la), axis=0)
+            self.contingency_imges = np.concatenate((self.contingency_imges, adv_images), axis=0)
+            self.contingency_labels = np.concatenate((self.contingency_labels, zerolabels), axis=0)
             return (a, (adv_images, zerolabels))
         return (acc, pred, trainingContStep)
 
@@ -166,7 +170,7 @@ class Contingency:
         return rel_pred
 
     def next_batch(self, batch_size_training, batch_size_contingency, train):
-        training = self.only_valid(*train.next_batch(self.batch_size))
+        training = self.only_valid(*train.next_batch(batch_size_training))
         indices = np.arange(0 , self.contingency_imges.shape[0])
         np.random.shuffle(indices)
         indices = indices[:batch_size_contingency]

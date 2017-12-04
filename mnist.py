@@ -82,36 +82,36 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
     return (loss_op, pred_probas, accuracy)
 
 class MNistContingency(contingency.Contingency):
-    def __init__(self, learning_rate, num_classes):
+    def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, num_classes):
         if num_classes > max_classes:
             raise ValueError('Max classes is ', max_classes, ' not ', num_classes)
-        contingency.Contingency.__init__(self, learning_rate, learning_rate, num_input, num_classes, model_fn)
+        contingency.Contingency.__init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, num_input, num_classes, model_fn)
 
-def run(run_fn, mnist_cont, batch_size, num_adversarial, num_steps): 
-    images = tf.placeholder(tf.float32, shape=[None, mnist_cont.num_input], name="images")
+def run(run_fn, learning_rate, cont_obj, batch_size, num_steps): 
+    images = tf.placeholder(tf.float32, shape=[None, cont_obj.num_input], name="images")
     labels = tf.placeholder(tf.float32, shape=[None], name="labels")
     is_training = tf.placeholder(tf.bool, name="is_training")
     with tf.Session() as session:
-        (acc_eval, pred_eval, train_fn) = run_fn(images, labels, is_training)
+        (acc_eval, pred_eval, train_fn) = run_fn(images, learning_rate, labels, is_training)
         session.run(tf.global_variables_initializer())
         session.run(tf.tables_initializer())
         session.run(tf.local_variables_initializer())
         # Build the Estimator
 
         for iteration in range(num_steps):
-            (training, cont_training) = mnist_cont.next_batch(batch_size, (batch_size - num_adversarial), mnist.train)
+            (training, cont_training) = cont_obj.next_batch(batch_size, (batch_size - cont_obj.num_adversarial), mnist.train)
             (a, cont) = train_fn(iteration, session, training, cont_training)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 print("Training Accuracy in iteration ", iteration, ":", a)
 
-        (eval_rel_im, eval_rel_la) = mnist_cont.relabel(mnist.test)
-        (eval_valid_im, eval_valid_la) = mnist_cont.only_valid(mnist.test.images, mnist.test.labels)
+        (eval_rel_im, eval_rel_la) = cont_obj.relabel(mnist.test)
+        (eval_valid_im, eval_valid_la) = cont_obj.only_valid(mnist.test.images, mnist.test.labels)
         #a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
         #print("Final Accuracy on all relabeled classes", iteration, ":", a)
         a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
         print("Final Accuracy on only valid classes", iteration, ":", a)
-        (unex_im, unex_la) = mnist_cont.unexpected_data(mnist.test)
+        (unex_im, unex_la) = cont_obj.unexpected_data(mnist.test)
         a = session.run(acc_eval, feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
         print("Final Accuracy on unexpected data", iteration, ":", a)
 
@@ -122,7 +122,7 @@ def run(run_fn, mnist_cont, batch_size, num_adversarial, num_steps):
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
-        (data, labels) = mnist_cont.relabel_roc(mnist.test)
+        (data, labels) = cont_obj.relabel_roc(mnist.test)
         pred = session.run(pred_eval, 
                 feed_dict={images: data, is_training.name: False})
         pred_roc = 1 - pred[:,0]
