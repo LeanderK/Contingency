@@ -92,7 +92,7 @@ def run(run_fn, learning_rate, cont_obj, batch_size, num_steps):
     labels = tf.placeholder(tf.float32, shape=[None], name="labels")
     is_training = tf.placeholder(tf.bool, name="is_training")
     with tf.Session() as session:
-        (acc_eval, pred_eval, train_fn) = run_fn(images, learning_rate, labels, is_training)
+        (acc_eval, pred_eval, train_fn) = run_fn(features = images, learning_rate = learning_rate, labels = labels, is_training = is_training)
         session.run(tf.global_variables_initializer())
         session.run(tf.tables_initializer())
         session.run(tf.local_variables_initializer())

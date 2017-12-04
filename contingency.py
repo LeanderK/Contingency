@@ -64,10 +64,10 @@ class Contingency:
         return (acc, pred, trainWithout)
 
     def withRandomContingency(self, learning_rate, features, labels, is_training):
-        return self.internalWithContingency(features, learning_rate, labels, is_training, 0)
+        return self.internalWithContingency(learning_rate, features, labels, is_training, 0)
 
     def withContingency(self, learning_rate, features, labels, is_training):
-        return self.internalWithContingency(features, learning_rate, labels, is_training, self.num_adversarial_train)
+        return self.internalWithContingency(learning_rate, features, labels, is_training, self.num_adversarial_train)
 
     def internalWithContingency(self, learning_rate, features, labels, is_training, num_adversarial_train):
         (orig_loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes, is_training, False)
