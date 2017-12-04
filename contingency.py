@@ -51,11 +51,11 @@ class Contingency:
         
         return (acc, pred, trainWithout)
 
-    def withRandomContingency(self, features, labels, is_training):
-        return self.withContingency(features, labels, is_training, 0)
+    def withRandomContingency(self, features, labels, is_training, num_adversarial):
+        return self.withContingency(features, labels, is_training, num_adversarial, 0)
 
-    def withContingency(self, features, labels, is_training, num_adversarial_train):
-        (orig_loss_op, pred, acc) = self.model_fn(features, labels, is_training, False)
+    def withContingency(self, features, labels, is_training, num_adversarial, num_adversarial_train):
+        (orig_loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes, is_training, False)
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
         cont_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="cont_batch")
         cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="cont_batch_labels")
@@ -63,16 +63,16 @@ class Contingency:
         #scalar that controls contingency 
         cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
 
-        (cont_loss, cont_pred, cont_acc) = self.model_fn(cont_batch, cont_batch_la, is_training, True)
+        (cont_loss, cont_pred, cont_acc) = self.model_fn(cont_batch, cont_batch_la, self.num_classes, is_training, True)
         loss_with_cont = orig_loss_op + cont_beta * cont_loss
         train_op = optimizer.minimize(loss_with_cont,
                                     global_step=tf.train.get_global_step())
 
         #generating the contingengy
-        gen_images = tf.get_variable(dtype=tf.float32, shape=[self.num_adversarial, self.num_input], name="gen_images")
-        gen_labels = tf.placeholder(dtype=tf.float32, shape=[self.num_adversarial], name="gen_labels")
+        gen_images = tf.get_variable(dtype=tf.float32, shape=[num_adversarial, self.num_input], name="gen_images")
+        gen_labels = tf.placeholder(dtype=tf.float32, shape=[num_adversarial], name="gen_labels")
 
-        (gen_loss_op, gen_pred, gen_acc) = self.model_fn(gen_images, gen_labels, is_training, True)
+        (gen_loss_op, gen_pred, gen_acc) = self.model_fn(gen_images, gen_labels, self.num_classes, is_training, True)
 
         #TODO replace
         #there is a general mysterium surrounding this function. What does it do exactly? I have not get round 
@@ -95,8 +95,8 @@ class Contingency:
             (cont_img, cont_labels) = cont_training
 
             # generates the congingency
-            randomImages = nprandom.random((self.num_adversarial, self.num_input))
-            zerolabels = np.zeros(self.num_adversarial)
+            randomImages = nprandom.random((num_adversarial, self.num_input))
+            zerolabels = np.zeros(num_adversarial)
             session.run(gen_images.assign(randomImages))
 
             for iteration in range(num_adversarial_train):
@@ -130,8 +130,8 @@ class Contingency:
 
 
     def only_valid(self, images, labels):
-    indices = np.where(labels < self.num_classes )
-    return (images[indices], labels[indices])
+        indices = np.where(labels < self.num_classes )
+        return (images[indices], labels[indices])
 
     def relabel(self, dataset):
         indices = np.where(dataset.labels >= self.num_classes )

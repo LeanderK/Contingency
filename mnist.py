@@ -82,7 +82,7 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
     return (loss_op, pred_probas, accuracy)
 
 class MNistContingency(contingency.Contingency):
-    def __init__(self, learning_rate, num_steps, batch_size, num_adversarial, num_classes):
+    def __init__(self, learning_rate, num_classes):
         if num_classes > max_classes:
             raise ValueError('Max classes is ', max_classes, ' not ', num_classes)
         contingency.Contingency.__init__(self, learning_rate, learning_rate, num_input, num_classes, model_fn)
