@@ -109,6 +109,8 @@ def run(run_fn, learning_rate, num_adversarial, cont_data, batch_size, num_steps
         for iteration in range(num_steps):
             (training, cont_training) = cont_data.next_batch(batch_size, (batch_size - num_adversarial))
             (a, cont) = train_fn(iteration, session, training, cont_training)
+            (cont_data, cont_lbls) = cont
+            cont_data.self.contingency_data.add_to_contingency(cont_data, cont_lbls)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 print("Training Accuracy in iteration ", iteration, ":", a)

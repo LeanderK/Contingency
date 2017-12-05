@@ -72,7 +72,7 @@ class ContingencyData:
         if c_did_reshuffle:
             self.contingency_data = c_d
             self.contingency_labels = c_l
-            
+
         return (data_train, data_contingency)
 
 
@@ -159,3 +159,10 @@ class ContingencyData:
 
     def get_num_classes(self):
         return self.num_classes
+
+    def add_to_contingency(self, cont_data, cont_lables):
+        self.contingency_imges = np.concatenate((self.contingency_imges, cont_data), axis=0)
+        self.contingency_labels = np.concatenate((self.contingency_labels, cont_lables), axis=0)
+
+    def reset_contingency(self):
+        self.contingency_imges = np.empty(shape=(0, self.num_input))

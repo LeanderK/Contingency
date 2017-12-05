@@ -38,10 +38,6 @@ class Contingency:
         # Network Parameters
         self.num_input = num_input
 
-        #TODO max size?
-        self.contingency_imges = np.empty(shape=(0, num_input))
-        self.contingency_labels = np.empty(shape=(0))
-
         self.model_fn = model_fn
 
         self.contingency_data = cont_data
@@ -57,9 +53,6 @@ class Contingency:
         #share of zero-labels in the dataset
         share_zeros = (np.where(train_labels == 0)[0].shape[0])/(train_labels.shape[0])
         self.loss_random_prediction = -np.log(share_zeros)
-
-    def reset_contingency(self):
-        self.contingency_imges = np.empty(shape=(0, self.num_input))
 
     def withoutContingency(self, learning_rate, features, labels, is_training):
         (loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes
@@ -144,9 +137,6 @@ class Contingency:
                     cont_batch_la.name: cont_labels,
                     cont_beta.name: 1,
                     is_training.name: True})  
-
-            self.contingency_imges = np.concatenate((self.contingency_imges, adv_images), axis=0)
-            self.contingency_labels = np.concatenate((self.contingency_labels, zerolabels), axis=0)
             return (a, (adv_images, zerolabels))
         return (acc, pred, trainingContStep)
 
