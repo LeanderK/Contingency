@@ -14,7 +14,8 @@ from sklearn.metrics import roc_curve, auc
 
 class ContingencyData:
 
-    def __init__(train_data, train_labels, test_data, test_labels, validation_data, validation_labels, num_classes, num_input)
+    def __init__(self, train_data, train_labels, test_data, test_labels, validation_data
+                , validation_labels, num_classes, num_input):
         """
         Parameters
         ----------
@@ -56,7 +57,7 @@ class ContingencyData:
         self.current_index_contingency = 0
 
     def next_batch(self, batch_size_training, batch_size_contingency):
-        training_step = internal_next_batch(self.train_data_valid, self.train_labels_valid
+        training_step = self.internal_next_batch(self.train_data_valid, self.train_labels_valid
                                         , self.current_index_train, batch_size_training)
         (d, l, new_train_index, data_train, did_reshuffle) = training_step
         self.current_index_train = new_train_index
@@ -64,37 +65,33 @@ class ContingencyData:
             self.epoch_count += 1
             self.train_data_valid = d
             self.train_labels_valid = l
-        contingency_step = internal_next_batch(self.contingency_data, self.contingency_labels
+        contingency_step = self.internal_next_batch(self.contingency_data, self.contingency_labels
                                         , self.current_index_contingency, batch_size_contingency)
         (c_d, c_l, new_cont_index, data_contingency, c_did_reshuffle) = contingency_step
         self.current_index_contingency = new_cont_index
         if c_did_reshuffle:
             self.contingency_data = c_d
             self.contingency_labels = c_l
-
-        (batch_train_data, batch_train_lbls) = data_train
-        (batch_cont_data, batch_cont_lbls) = data_contingency
-        batch_data = np.concatenate((batch_train_data,batch_cont_data), axis=0)
-        batch_lbls = np.concatenate((batch_train_lbls,batch_cont_lbls), axis=0)
-        return (batch_data, batch_lbls)
+            
+        return (data_train, data_contingency)
 
 
-    def internal_next_batch(data, labels, current_index, batch_size):
+    def internal_next_batch(self, data, labels, current_index, batch_size):
         end = current_index + batch_size
         if end > data.shape[0]:
-            (d, l, i, data_batch) = reshuffle(data, labels, current_index, batch_size)
+            (d, l, i, data_batch) = self.reshuffle(data, labels, current_index, batch_size)
             return (d, l, i, data_batch, True)
-        else
-            res_data = data[current_index, end]
-            res_lbls = labels[current_index, end]
+        else:
+            res_data = data[current_index: end]
+            res_lbls = labels[current_index: end]
             return (data, labels, end, (res_data, res_lbls), False)
 
-    def reshuffle(data, labels, current_index, batch_size):
+    def reshuffle(self, data, labels, current_index, batch_size):
         data_length = data.shape[0]
         remaining_data = data[current_index:data_length]
         remaining_labels = labels[current_index:data_length]
 
-        self.train_random_indexes = np.arange(0 , data_length)
+        train_random_indexes = np.arange(0 , data_length)
         np.random.shuffle(train_random_indexes)
         reshu_data = data[train_random_indexes]
         reshu_labels = labels[train_random_indexes]
@@ -154,8 +151,11 @@ class ContingencyData:
         self.contingency_data = np.concatenate((self.contingency_data,cont_data), axis=0)
         self.contingency_labels = np.concatenate((self.contingency_labels,cont_lbls), axis=0)
 
-    def get_original_training_data():
+    def get_original_training_data(self):
         return (self.train_data, self.train_labels)
 
-    def get_num_classes():
+    def get_valid_training_data(self):
+        return (self.train_data_valid, self.train_labels_valid)
+
+    def get_num_classes(self):
         return self.num_classes
