@@ -56,7 +56,7 @@ class Contingency:
         self.min_image = tf.reduce_min(data,axis=0)
         #share of zero-labels in the dataset
         share_zeros = (np.where(train_labels == 0)[0].shape[0])/(train_labels.shape[0])
-        self.loss_random_prediction = np.log(share_zeros)
+        self.loss_random_prediction = -np.log(share_zeros)
 
     def reset_contingency(self):
         self.contingency_imges = np.empty(shape=(0, self.num_input))
