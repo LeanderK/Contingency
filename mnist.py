@@ -37,12 +37,12 @@ def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
         x = tf.reshape(x, shape=[-1, 28, 28, 1])
 
         # Convolution Layer with 32 filters and a kernel size of 5
-        conv1 = tf.layers.conv2d(x, 32, 5, activation=tf.nn.relu)
+        conv1 = tf.layers.conv2d(x, 32, 5, activation=tf.nn.relu, name='conv1')
         # Max Pooling (down-sampling) with strides of 2 and kernel size of 2
         conv1 = tf.layers.max_pooling2d(conv1, 2, 2)
 
         # Convolution Layer with 64 filters and a kernel size of 3
-        conv2 = tf.layers.conv2d(conv1, 64, 3, activation=tf.nn.relu)
+        conv2 = tf.layers.conv2d(conv1, 64, 3, activation=tf.nn.relu, name='conv2')
         # Max Pooling (down-sampling) with strides of 2 and kernel size of 2
         conv2 = tf.layers.max_pooling2d(conv2, 2, 2)
 
@@ -50,12 +50,16 @@ def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
         fc1 = tf.contrib.layers.flatten(conv2)
 
         # Fully connected layer (in tf contrib folder for now)
-        fc1 = tf.layers.dense(fc1, 1024)
+        fc1 = tf.layers.dense(fc1, 1024, name='fc1')
         # Apply Dropout (if is_training is False, dropout is not applied)
         fc1 = tf.layers.dropout(fc1, rate=dropout, training=is_training)
 
         # Output layer, class prediction
-        out = tf.layers.dense(fc1, n_classes)
+        out = tf.layers.dense(fc1, n_classes, name='out')
+
+        for tensor in tf.global_variables():
+            #tensor = tf.get_default_graph().get_tensor_by_name(name)
+            tf.summary.histogram('histogram', tensor)
 
     return out
 
@@ -72,13 +76,17 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
 
     correct_prediction = tf.equal(pred_classes, tf.cast(labels, dtype=tf.int64))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    tf.summary.scalar("accuracy", accuracy)
 
     # Evaluate the accuracy of the model
     #acc, acc_op = tf.metrics.accuracy(labels=labels, predictions=pred_classes)
 
     # Define loss and optimizer
-    loss_op = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-        logits=logits, labels=tf.cast(labels, dtype=tf.int32)))
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        logits=logits, labels=tf.cast(labels, dtype=tf.int32))
+    tf.summary.histogram("crosse-entropy", cross_entropy)
+    loss_op = tf.reduce_mean(cross_entropy)
+    tf.summary.scalar("loss", loss_op)
     
     return (loss_op, pred_probas, accuracy)
 
@@ -99,8 +107,11 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
     images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
     labels = tf.placeholder(tf.float32, shape=[None], name="labels")
     is_training = tf.placeholder(tf.bool, name="is_training")
+    merged = tf.summary.merge_all()
     with tf.Session() as session:
         (acc_eval, pred_eval, train_fn) = run_fn(features = images, learning_rate = learning_rate, labels = labels, is_training = is_training)
+        summary_writer = tf.summary.FileWriter('tensorboard/train',
+                                            session.graph)
         session.run(tf.global_variables_initializer())
         session.run(tf.tables_initializer())
         session.run(tf.local_variables_initializer())
@@ -108,12 +119,16 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
 
         for iteration in range(num_steps):
             (training, cont_training) = cont_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
-            (a, cont) = train_fn(iteration, session, training, cont_training)
-            (cont_data, cont_lbls) = cont
+            (cont_data, cont_lbls) = train_fn(iteration, session, training, cont_training)
             cont_data_obj.add_to_contingency(cont_data, cont_lbls)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
-                print("Training Accuracy in iteration ", iteration, ":", a)
+                (training, _) = cont_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
+                (train_data, train_lbls) = training
+                (summ, acc) = session.run([merged, acc_eval], feed_dict={images: train_data, labels: train_lbls, is_training.name: False})
+                print("Training Accuracy in iteration ", iteration, ":", acc)
+                summary_writer.add_summary(summ, iteration)
+                summary_writer.flush()
 
         (eval_rel_im, eval_rel_la) = cont_data_obj.full_test_data()
         (eval_valid_im, eval_valid_la) = cont_data_obj.get_valid_training_data()

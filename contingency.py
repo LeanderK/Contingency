@@ -44,41 +44,45 @@ class Contingency:
         self.num_classes = cont_data.get_num_classes()
         (train_data, train_labels) = cont_data.get_valid_training_data()
 
-        #from IPython.core.debugger import Tracer; Tracer()() 
-        data = tf.convert_to_tensor(train_data, dtype=tf.float32, name="data")
-        #calculate max euclidian distance in the training data
-        self.max_dist = tf.reduce_max(tf.reshape(self.pairwiseL2Norm(data, data), shape=[-1, 1]))
-        self.max_image = tf.reduce_max(data,axis=0)
-        self.min_image = tf.reduce_min(data,axis=0)
-        #share of zero-labels in the dataset
-        share_zeros = (np.where(train_labels == 0)[0].shape[0])/(train_labels.shape[0])
-        self.loss_random_prediction = -np.log(share_zeros)
+        with tf.name_scope('contingency'):
+            #from IPython.core.debugger import Tracer; Tracer()() 
+            data = tf.convert_to_tensor(train_data, dtype=tf.float32, name="data")
+            #calculate max euclidian distance in the training data
+            self.max_dist = tf.reduce_max(tf.reshape(self.pairwiseL2Norm(data, data), shape=[-1, 1]))
+            self.max_image = tf.reduce_max(data,axis=0)
+            self.min_image = tf.reduce_min(data,axis=0)
+            #share of zero-labels in the dataset
+            share_zeros = (np.where(train_labels == 0)[0].shape[0])/(train_labels.shape[0])
+            self.loss_random_prediction = -np.log(share_zeros)
 
     def withoutContingency(self, learning_rate, features, labels, is_training):
-        (loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes
-                                            , is_training, False)
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        train_op = optimizer.minimize(loss_op,
-                                    global_step=tf.train.get_global_step())
+        with tf.name_scope('without_contingency'):
+            (loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes
+                                                , is_training, False)
+            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+            train_op = optimizer.minimize(loss_op,
+                                        global_step=tf.train.get_global_step())
 
-        def trainWithout(iteration, session, training, cont_training):
-            (train_images, train_labels) = training
-            a, t = session.run([acc, train_op], feed_dict={
-                    features.name: train_images,
-                    labels.name: train_labels,
-                    is_training.name: True})  
-            empty_imges = np.empty(shape=(0, self.num_input))
-            empty_labels = np.empty(shape=(0))
-            empty = (empty_imges, empty_labels)
-            return (a, empty)
-        
-        return (acc, pred, trainWithout)
+            def trainWithout(iteration, session, training, cont_training):
+                (train_images, train_labels) = training
+                t = session.run([train_op], feed_dict={
+                        features.name: train_images,
+                        labels.name: train_labels,
+                        is_training.name: True})  
+                empty_imges = np.empty(shape=(0, self.num_input))
+                empty_labels = np.empty(shape=(0))
+                empty = (empty_imges, empty_labels)
+                return (empty)
+            
+            return (acc, pred, trainWithout)
 
     def withRandomContingency(self, learning_rate, features, labels, is_training):
-        return self.internalWithContingency(learning_rate, features, labels, is_training, 0)
+        with tf.name_scope('with_random_contingency'):
+            return self.internalWithContingency(learning_rate, features, labels, is_training, 0)
 
     def withContingency(self, learning_rate, features, labels, is_training):
-        return self.internalWithContingency(learning_rate, features, labels, is_training, self.num_adversarial_train)
+        with tf.name_scope('with_adversarial_contingency'):
+            return self.internalWithContingency(learning_rate, features, labels, is_training, self.num_adversarial_train)
 
     def internalWithContingency(self, learning_rate, features, labels, is_training, num_adversarial_train):
         (orig_loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes, is_training, False)
@@ -102,7 +106,7 @@ class Contingency:
 
         distance = tf.reduce_mean(self.pairwiseL2Norm(gen_images, features), axis=1)
 
-        adversial_fitness = gen_loss_op - 1/distance#(self.loss_random_prediction * self.max_dist)/distance
+        adversial_fitness = gen_loss_op - (self.loss_random_prediction * self.max_dist)/distance
         #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
         optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate_adv)
         adv_op = optimizer2.minimize(-1 * adversial_fitness,
@@ -130,14 +134,14 @@ class Contingency:
             #TODO redo this, we can't switch contingency labels right now
             cont_labels = np.zeros(cont_img.shape[0])
 
-            a, t = session.run([acc, train_op], feed_dict={
+            t = session.run([train_op], feed_dict={
                     features.name: train_images,
                     labels.name: train_labels,
                     cont_batch.name: cont_img,
                     cont_batch_la.name: cont_labels,
-                    cont_beta.name: 1,
+                    cont_beta.name: 0,
                     is_training.name: True})  
-            return (a, (adv_images, zerolabels))
+            return (adv_images, zerolabels)
         return (acc, pred, trainingContStep)
 
     def pairwiseL2Norm(self, x, y):

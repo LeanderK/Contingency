@@ -3,3 +3,4 @@ venv
 .vscode/settings.json
 .ipynb_checkpoints/Playground-checkpoint.ipynb
 __pycache__
+tensorboard
