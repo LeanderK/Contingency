@@ -22,24 +22,29 @@ class ContingencyData:
         num_classes : int
             the the number of classes trained on
         """
-        train_indices = np.where(train_labels < num_classes)
-        self.train_data = train_data[train_indices]
-        self.train_labels = train_labels[train_indices]
+        self.train_data = train_data
+        self.train_labels = train_labels
+
+        self.test_data = test_data
+        self.test_labels = test_labels
+
+        train_indices_valid = np.where(train_labels < num_classes)
+        self.train_data_valid = train_data[train_indices_valid]
+        self.train_labels_valid = train_labels[train_indices_valid]
+        train_random_indexes = np.arange(0 , self.train_data_valid.shape[0])
+        np.random.shuffle(train_random_indexes)
+        self.train_data_valid = self.train_data_valid[train_random_indexes]
+        self.train_labels_valid = self.train_labels_valid[train_random_indexes]
+        self.current_index_train = 0
+        self.epoch_count = 0
 
         test_indices_valid = np.where(test_labels < num_classes)
         self.test_data_valid = test_data[test_indices_valid]
         self.test_labels_valid = test_labels[test_indices_valid]
 
-        train_random_indexes = np.arange(0 , train_data.shape[0])
-        np.random.shuffle(train_random_indexes)
-        self.train_data_valid = train_data[train_random_indexes]
-        self.train_labels_valid = train_labels[train_random_indexes]
-        self.current_index_train = 0
-        self.epoch_count = 0
-
         test_indices_invalid = np.where(test_labels >= num_classes)
         self.test_data_invalid = test_data[test_indices_invalid]
-        self.test_labels_invalid = test_labels[test_indices_invalid]
+        self.test_labels_invalid = np.zeros(test_indices_invalid[0].shape[0])
 
         validation_indices_valid = np.where(validation_labels < num_classes)
         self.validation_data_valid = validation_data[validation_indices_valid]
@@ -47,9 +52,10 @@ class ContingencyData:
 
         validation_indices_invalid = np.where(validation_labels >= num_classes)
         self.validation_data_invalid = validation_data[validation_indices_invalid]
-        self.validation_labels_invalid = validation_labels[validation_indices_invalid]
+        self.validation_labels_invalid = np.zeros(validation_indices_invalid[0].shape[0])
 
         self.num_classes = num_classes
+        self.num_input = num_input
 
         #TODO max size?
         self.contingency_data = np.empty(shape=(0, num_input))
@@ -104,25 +110,35 @@ class ContingencyData:
         train_labels = np.concatenate((remaining_labels,additional_labels), axis=0)
         return (reshu_data, reshu_labels, updated_index, (train_data, train_labels))
 
-    def relabel(self, dataset):
-        indices = np.where(dataset.labels >= self.num_classes )
-        relabel = np.copy(dataset.labels)
+    def full_test_data(self):
+        """
+        returns the normal, valid test data and relabeled data outside of the normal trained data-manifold
+        """
+        indices = np.where(self.test_labels >= self.num_classes )
+        relabel = np.copy(self.test_labels)
         relabel[indices] = 0
-        return (dataset.images, relabel)
+        return (self.test_data, relabel)
 
-    def relabel_roc(self, dataset):
+    def relabel_roc(self):
+        """
+        returns 50% relabeled data outside of the normal trained data-manifold and 50% normal data
+        """
         #50% unexpected data
-        unexp_indices = np.where(dataset.labels >= self.num_classes )
+        unexp_indices = np.where(self.test_labels >= self.num_classes )
         #we only want unexpected data
-        not_null_valid = np.where(np.logical_and(np.greater(dataset.labels,0), np.less(dataset.labels, self.num_classes)))
+        not_null_valid = np.where(
+                            np.logical_and(
+                                np.greater(self.test_labels,0), 
+                                np.less(self.test_labels, self.num_classes)
+                            ))
         length = min(unexp_indices[0].shape[0], not_null_valid[0].shape[0])
 
         unexp_indices = unexp_indices[:length]
-        unexp_imges = dataset.images[unexp_indices]
+        unexp_imges = self.test_data[unexp_indices]
         unexp_labels = np.zeros(unexp_indices[0].shape[0])
 
         not_null_valid = not_null_valid[:length]
-        valid_imges = dataset.images[not_null_valid]
+        valid_imges = self.test_data[not_null_valid]
         valid_labels = np.ones(not_null_valid[0].shape[0])
 
         roc_imges = np.concatenate((unexp_imges,valid_imges), axis=0)
@@ -136,20 +152,18 @@ class ContingencyData:
         rel_pred[indices] = 1
         return rel_pred
 
-    def test_data_for_label(self, label, test):
-        indices = np.where(test.labels == label)
-        return (test.images[indices], test.labels[indices])
+    def test_data_for_label(self, label):
+        """
+        returns all the test-data for a single label
+        """
+        indices = np.where(self.test_labels == label)
+        return (self.test_data[indices], self.test_labels[indices])
 
-    def unexpected_data(self, dataset):
-        indices = np.where(dataset.labels >= self.num_classes)
-        imges = dataset.images[indices]
-        #TODO more dynamic defaults
-        zeros = np.zeros(indices[0].shape[0])
-        return (imges, zeros)
-    
-    def add_contingency(self, cont_data, cont_lbls):
-        self.contingency_data = np.concatenate((self.contingency_data,cont_data), axis=0)
-        self.contingency_labels = np.concatenate((self.contingency_labels,cont_lbls), axis=0)
+    def unexpected_data(self):
+        """
+        returns all the relabeled data outside of the normal trained data-manifold
+        """
+        return (self.test_data_invalid, self.test_labels_invalid)
 
     def get_original_training_data(self):
         return (self.train_data, self.train_labels)
@@ -161,8 +175,9 @@ class ContingencyData:
         return self.num_classes
 
     def add_to_contingency(self, cont_data, cont_lables):
-        self.contingency_imges = np.concatenate((self.contingency_imges, cont_data), axis=0)
+        self.contingency_data = np.concatenate((self.contingency_data, cont_data), axis=0)
         self.contingency_labels = np.concatenate((self.contingency_labels, cont_lables), axis=0)
 
     def reset_contingency(self):
-        self.contingency_imges = np.empty(shape=(0, self.num_input))
+        self.contingency_data = np.empty(shape=(0, self.num_input))
+        self.contingency_labels = np.empty(shape=(0))

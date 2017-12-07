@@ -95,7 +95,7 @@ class MNISTContData(contingency_data.ContingencyData):
                                                 , mnist.test.labels, mnist.validation.images, mnist.validation.labels
                                                 , num_classes, num_input)
 
-def run(run_fn, learning_rate, num_adversarial, cont_data, batch_size, num_steps): 
+def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_steps): 
     images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
     labels = tf.placeholder(tf.float32, shape=[None], name="labels")
     is_training = tf.placeholder(tf.bool, name="is_training")
@@ -107,21 +107,21 @@ def run(run_fn, learning_rate, num_adversarial, cont_data, batch_size, num_steps
         # Build the Estimator
 
         for iteration in range(num_steps):
-            (training, cont_training) = cont_data.next_batch(batch_size, (batch_size - num_adversarial))
+            (training, cont_training) = cont_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
             (a, cont) = train_fn(iteration, session, training, cont_training)
             (cont_data, cont_lbls) = cont
-            cont_data.self.contingency_data.add_to_contingency(cont_data, cont_lbls)
+            cont_data_obj.add_to_contingency(cont_data, cont_lbls)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 print("Training Accuracy in iteration ", iteration, ":", a)
 
-        (eval_rel_im, eval_rel_la) = cont_data.relabel(mnist.test)
-        (eval_valid_im, eval_valid_la) = cont_data.only_valid(mnist.test.images, mnist.test.labels)
+        (eval_rel_im, eval_rel_la) = cont_data_obj.full_test_data()
+        (eval_valid_im, eval_valid_la) = cont_data_obj.get_valid_training_data()
         #a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
         #print("Final Accuracy on all relabeled classes", iteration, ":", a)
         a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
         print("Final Accuracy on only valid classes", iteration, ":", a)
-        (unex_im, unex_la) = cont_data.unexpected_data(mnist.test)
+        (unex_im, unex_la) = cont_data_obj.unexpected_data()
         a = session.run(acc_eval, feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
         print("Final Accuracy on unexpected data", iteration, ":", a)
 
@@ -132,7 +132,7 @@ def run(run_fn, learning_rate, num_adversarial, cont_data, batch_size, num_steps
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
-        (data, labels) = cont_data.relabel_roc(mnist.test)
+        (data, labels) = cont_data_obj.relabel_roc()
         pred = session.run(pred_eval, 
                 feed_dict={images: data, is_training.name: False})
         pred_roc = 1 - pred[:,0]

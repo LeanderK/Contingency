@@ -102,7 +102,7 @@ class Contingency:
 
         distance = tf.reduce_mean(self.pairwiseL2Norm(gen_images, features), axis=1)
 
-        adversial_fitness = gen_loss_op - (self.loss_random_prediction * self.max_dist)/distance
+        adversial_fitness = gen_loss_op - 1/distance#(self.loss_random_prediction * self.max_dist)/distance
         #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
         optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate_adv)
         adv_op = optimizer2.minimize(-1 * adversial_fitness,
@@ -118,7 +118,7 @@ class Contingency:
             zerolabels = np.zeros(self.num_adversarial)
             session.run(gen_images.assign(randomImages))
 
-            for iteration in range(self.num_adversarial_train):
+            for iteration in range(num_adversarial_train):
                 #TODO does this work?
                 a = session.run(adv_op, feed_dict={
                         gen_labels.name: zerolabels,
