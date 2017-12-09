@@ -124,11 +124,10 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
             cont_data_obj.add_to_contingency(cont_data, cont_lbls)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
-                (training, _) = cont_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
-                (train_data, train_lbls) = training
+                (test_data, test_lbls) = cont_data_obj.next_test_batch(batch_size)
                 (summ, acc) = session.run(
                     [model['summ_op'], model['acc_op']], 
-                    feed_dict={images: train_data, labels: train_lbls, is_training.name: False}
+                    feed_dict={images: test_data, labels: test_lbls, is_training.name: False}
                 )
                 print("Training Accuracy in iteration ", iteration, ":", acc)
                 summary_writer.add_summary(summ, iteration)

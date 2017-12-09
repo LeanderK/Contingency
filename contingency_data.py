@@ -41,6 +41,8 @@ class ContingencyData:
         test_indices_valid = np.where(test_labels < num_classes)
         self.test_data_valid = test_data[test_indices_valid]
         self.test_labels_valid = test_labels[test_indices_valid]
+        self.current_index_test = 0
+        self.epoch_count_test = 0
 
         test_indices_invalid = np.where(test_labels >= num_classes)
         self.test_data_invalid = test_data[test_indices_invalid]
@@ -80,6 +82,17 @@ class ContingencyData:
             self.contingency_labels = c_l
 
         return (data_train, data_contingency)
+
+    def next_test_batch(self, batch_size_test):
+        test_step = self.internal_next_batch(self.test_data_valid, self.test_labels_valid
+                                        , self.current_index_test, batch_size_test)
+        (d, l, new_test_index, data_test, did_reshuffle) = test_step
+        self.current_index_test = new_test_index
+        if did_reshuffle:
+            self.epoch_count += 1
+            self.test_data_valid = d
+            self.test_labels_valid = l
+        return data_test
 
 
     def internal_next_batch(self, data, labels, current_index, batch_size):
@@ -128,18 +141,18 @@ class ContingencyData:
         #we only want unexpected data
         not_null_valid = np.where(
                             np.logical_and(
-                                np.greater(self.test_labels,0), 
+                                np.greater_equal(self.test_labels,0), 
                                 np.less(self.test_labels, self.num_classes)
                             ))
         length = min(unexp_indices[0].shape[0], not_null_valid[0].shape[0])
 
-        unexp_indices = unexp_indices[:length]
+        unexp_indices = unexp_indices[0][:length]
         unexp_imges = self.test_data[unexp_indices]
-        unexp_labels = np.zeros(unexp_indices[0].shape[0])
+        unexp_labels = np.zeros(unexp_indices.shape[0])
 
-        not_null_valid = not_null_valid[:length]
+        not_null_valid = not_null_valid[0][:length]
         valid_imges = self.test_data[not_null_valid]
-        valid_labels = np.ones(not_null_valid[0].shape[0])
+        valid_labels = np.ones(valid_imges.shape[0])
 
         roc_imges = np.concatenate((unexp_imges,valid_imges), axis=0)
         roc_labels = np.concatenate((unexp_labels,valid_labels), axis=0)
