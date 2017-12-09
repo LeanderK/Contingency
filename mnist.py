@@ -26,6 +26,7 @@ mnist = input_data.read_data_sets("/tmp/data/", one_hot=False)
 
 # Create the neural network
 def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
+    summaries = []
     # Define a scope for reusing the variables
     with tf.variable_scope('ConvNet', reuse=should_reuse):
         # TF Estimator input is a dict, in case of multiple inputs
@@ -58,17 +59,18 @@ def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
         out = tf.layers.dense(fc1, n_classes, name='out')
 
         for tensor in tf.global_variables():
-            #tensor = tf.get_default_graph().get_tensor_by_name(name)
-            tf.summary.histogram('histogram', tensor)
+            name = (tensor.name + '_histogram').replace(':', '_')
+            summ = tf.summary.histogram(name, tensor)
+            summaries.append(summ)
 
-    return out
+    return (out, summaries)
 
 # Define the model function
 def model_fn(features, labels, num_classes, is_training, should_reuse):
     # Build the neural network
     # Because Dropout have different behavior at training and prediction time, we
     # need to create 2 distinct computation graphs that still share the same weights.
-    logits = conv_net(features, num_classes, dropout, is_training=is_training, should_reuse=should_reuse)
+    (logits, summaries) = conv_net(features, num_classes, dropout, is_training=is_training, should_reuse=should_reuse)
 
     # Predictions
     pred_classes = tf.argmax(logits, axis=1)
@@ -76,7 +78,7 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
 
     correct_prediction = tf.equal(pred_classes, tf.cast(labels, dtype=tf.int64))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-    tf.summary.scalar("accuracy", accuracy)
+    summaries.append(tf.summary.scalar("accuracy", accuracy))
 
     # Evaluate the accuracy of the model
     #acc, acc_op = tf.metrics.accuracy(labels=labels, predictions=pred_classes)
@@ -84,11 +86,11 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
     # Define loss and optimizer
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits=logits, labels=tf.cast(labels, dtype=tf.int32))
-    tf.summary.histogram("crosse-entropy", cross_entropy)
+    summaries.append(tf.summary.histogram("crosse-entropy", cross_entropy))
     loss_op = tf.reduce_mean(cross_entropy)
-    tf.summary.scalar("loss", loss_op)
-    
-    return (loss_op, pred_probas, accuracy)
+    summaries.append(tf.summary.scalar("loss", loss_op))
+
+    return {'loss_op':loss_op, 'pred_op':pred_probas, 'acc_op':accuracy, 'summ_op': tf.summary.merge(summaries)}
 
 class MNistContingency(contingency.Contingency):
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, cont_data):
@@ -107,9 +109,8 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
     images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
     labels = tf.placeholder(tf.float32, shape=[None], name="labels")
     is_training = tf.placeholder(tf.bool, name="is_training")
-    merged = tf.summary.merge_all()
     with tf.Session() as session:
-        (acc_eval, pred_eval, train_fn) = run_fn(features = images, learning_rate = learning_rate, labels = labels, is_training = is_training)
+        model = run_fn(features = images, learning_rate = learning_rate, labels = labels, is_training = is_training)
         summary_writer = tf.summary.FileWriter('tensorboard/train',
                                             session.graph)
         session.run(tf.global_variables_initializer())
@@ -119,25 +120,28 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
 
         for iteration in range(num_steps):
             (training, cont_training) = cont_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
-            (cont_data, cont_lbls) = train_fn(iteration, session, training, cont_training)
+            (cont_data, cont_lbls) = model['train_fn'](iteration, session, training, cont_training)
             cont_data_obj.add_to_contingency(cont_data, cont_lbls)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 (training, _) = cont_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
                 (train_data, train_lbls) = training
-                (summ, acc) = session.run([merged, acc_eval], feed_dict={images: train_data, labels: train_lbls, is_training.name: False})
+                (summ, acc) = session.run(
+                    [model['summ_op'], model['acc_op']], 
+                    feed_dict={images: train_data, labels: train_lbls, is_training.name: False}
+                )
                 print("Training Accuracy in iteration ", iteration, ":", acc)
                 summary_writer.add_summary(summ, iteration)
                 summary_writer.flush()
 
         (eval_rel_im, eval_rel_la) = cont_data_obj.full_test_data()
         (eval_valid_im, eval_valid_la) = cont_data_obj.get_valid_training_data()
-        #a = session.run(acc_eval, feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
+        #a = session.run(model['acc_op'], feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
         #print("Final Accuracy on all relabeled classes", iteration, ":", a)
-        a = session.run(acc_eval, feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
+        a = session.run(model['acc_op'], feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
         print("Final Accuracy on only valid classes", iteration, ":", a)
         (unex_im, unex_la) = cont_data_obj.unexpected_data()
-        a = session.run(acc_eval, feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
+        a = session.run(model['acc_op'], feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
         print("Final Accuracy on unexpected data", iteration, ":", a)
 
         #TODO is this right?
@@ -148,7 +152,7 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
         tpr = dict()
         roc_auc = dict()
         (data, labels) = cont_data_obj.relabel_roc()
-        pred = session.run(pred_eval, 
+        pred = session.run(model['pred_op'], 
                 feed_dict={images: data, is_training.name: False})
         pred_roc = 1 - pred[:,0]
         fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)

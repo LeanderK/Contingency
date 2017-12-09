@@ -57,10 +57,10 @@ class Contingency:
 
     def withoutContingency(self, learning_rate, features, labels, is_training):
         with tf.name_scope('without_contingency'):
-            (loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes
+            model = self.model_fn(features, labels, self.num_classes
                                                 , is_training, False)
             optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-            train_op = optimizer.minimize(loss_op,
+            train_op = optimizer.minimize(model['loss_op'],
                                         global_step=tf.train.get_global_step())
 
             def trainWithout(iteration, session, training, cont_training):
@@ -73,8 +73,12 @@ class Contingency:
                 empty_labels = np.empty(shape=(0))
                 empty = (empty_imges, empty_labels)
                 return (empty)
-            
-            return (acc, pred, trainWithout)
+            return {
+                'acc_op':model['acc_op'], 
+                'pred_op':model['pred_op'], 
+                'train_fn':trainWithout, 
+                'summ_op':model['summ_op']
+            }
 
     def withRandomContingency(self, learning_rate, features, labels, is_training):
         with tf.name_scope('with_random_contingency'):
@@ -85,7 +89,7 @@ class Contingency:
             return self.internalWithContingency(learning_rate, features, labels, is_training, self.num_adversarial_train)
 
     def internalWithContingency(self, learning_rate, features, labels, is_training, num_adversarial_train):
-        (orig_loss_op, pred, acc) = self.model_fn(features, labels, self.num_classes, is_training, False)
+        model = self.model_fn(features, labels, self.num_classes, is_training, False)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         cont_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="cont_batch")
         cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="cont_batch_labels")
@@ -93,8 +97,8 @@ class Contingency:
         #scalar that controls contingency 
         cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
 
-        (cont_loss, cont_pred, cont_acc) = self.model_fn(cont_batch, cont_batch_la, self.num_classes, is_training, True)
-        loss_with_cont = orig_loss_op + cont_beta * cont_loss
+        cont_model = self.model_fn(cont_batch, cont_batch_la, self.num_classes, is_training, True)
+        loss_with_cont = model['loss_op'] + cont_beta * cont_model['loss_op']
         train_op = optimizer.minimize(loss_with_cont,
                                     global_step=tf.train.get_global_step())
 
@@ -102,11 +106,9 @@ class Contingency:
         gen_images = tf.get_variable(dtype=tf.float32, shape=[self.num_adversarial, self.num_input], name="gen_images")
         gen_labels = tf.placeholder(dtype=tf.float32, shape=[self.num_adversarial], name="gen_labels")
 
-        (gen_loss_op, gen_pred, gen_acc) = self.model_fn(gen_images, gen_labels, self.num_classes, is_training, True)
-
+        gen_model = self.model_fn(gen_images, gen_labels, self.num_classes, is_training, True)
         distance = tf.reduce_mean(self.pairwiseL2Norm(gen_images, features), axis=1)
-
-        adversial_fitness = gen_loss_op - (self.loss_random_prediction * self.max_dist)/distance
+        adversial_fitness = gen_model['loss_op'] - (self.loss_random_prediction * self.max_dist)/distance
         #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
         optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate_adv)
         adv_op = optimizer2.minimize(-1 * adversial_fitness,
@@ -142,7 +144,12 @@ class Contingency:
                     cont_beta.name: 0,
                     is_training.name: True})  
             return (adv_images, zerolabels)
-        return (acc, pred, trainingContStep)
+        return {
+            'acc_op': model['acc_op'], 
+            'pred_op': model['pred_op'], 
+            'train_fn': trainingContStep, 
+            'summ_op': model['summ_op']
+        }
 
     def pairwiseL2Norm(self, x, y):
         x_reshaped = tf.reshape(x, shape=[-1, 1, self.num_input])
