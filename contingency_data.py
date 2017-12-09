@@ -152,7 +152,8 @@ class ContingencyData:
 
         not_null_valid = not_null_valid[0][:length]
         valid_imges = self.test_data[not_null_valid]
-        valid_labels = np.ones(valid_imges.shape[0])
+        valid_labels = self.test_labels[not_null_valid]
+        valid_labels[valid_labels > 0] = 1
 
         roc_imges = np.concatenate((unexp_imges,valid_imges), axis=0)
         roc_labels = np.concatenate((unexp_labels,valid_labels), axis=0)

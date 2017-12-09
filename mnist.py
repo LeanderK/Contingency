@@ -148,7 +148,6 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
         #TODO is this right?
         # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html
         # Compute ROC curve and ROC area for each class
-        # BEWARE: the zero class here is unexpected input, not the zero class
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
@@ -159,4 +158,4 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
         fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
         roc_auc[0] = auc(fpr[0], tpr[0])
 
-        return (fpr, tpr, roc_auc, pred)
+        return (fpr, tpr, roc_auc, pred, model)
