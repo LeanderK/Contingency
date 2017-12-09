@@ -134,15 +134,17 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
                 summary_writer.add_summary(summ, iteration)
                 summary_writer.flush()
 
-        (eval_rel_im, eval_rel_la) = cont_data_obj.full_test_data()
         (eval_valid_im, eval_valid_la) = cont_data_obj.get_valid_training_data()
         #a = session.run(model['acc_op'], feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
         #print("Final Accuracy on all relabeled classes", iteration, ":", a)
         a = session.run(model['acc_op'], feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
-        print("Final Accuracy on only valid classes", iteration, ":", a)
+        print("Final Accuracy on only valid classes:", a)
         (unex_im, unex_la) = cont_data_obj.unexpected_data()
         a = session.run(model['acc_op'], feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
-        print("Final Accuracy on unexpected data", iteration, ":", a)
+        print("Final Accuracy on unexpected data:", a)
+        (rand_im, rand_la) = cont_data_obj.generate_random(eval_valid_la.shape[0])
+        a = session.run(model['acc_op'], feed_dict={images: rand_im, labels: rand_la, is_training.name: False})
+        print("Final Accuracy on random data:", a)
 
         #TODO is this right?
         # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html

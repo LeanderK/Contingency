@@ -96,8 +96,8 @@ class Contingency:
 
         #scalar that controls contingency 
         cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
-
         cont_model = self.model_fn(cont_batch, cont_batch_la, self.num_classes, is_training, True)
+
         loss_with_cont = model['loss_op'] + cont_beta * cont_model['loss_op']
         train_op = optimizer.minimize(loss_with_cont,
                                     global_step=tf.train.get_global_step())
@@ -141,7 +141,7 @@ class Contingency:
                     labels.name: train_labels,
                     cont_batch.name: cont_img,
                     cont_batch_la.name: cont_labels,
-                    cont_beta.name: 0,
+                    cont_beta.name: 1,
                     is_training.name: True})  
             return (adv_images, zerolabels)
         return {

@@ -181,3 +181,8 @@ class ContingencyData:
     def reset_contingency(self):
         self.contingency_data = np.empty(shape=(0, self.num_input))
         self.contingency_labels = np.empty(shape=(0))
+
+    def generate_random(self, num_random):
+        randomImages = nprandom.random((num_random, self.num_input))
+        zerolabels = np.zeros(num_random)
+        return (randomImages, zerolabels)
