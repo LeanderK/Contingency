@@ -130,6 +130,7 @@ class Contingency:
                 #TODO does this work?
                 a = session.run(adv_op, feed_dict={
                         gen_labels.name: zerolabels,
+                        features.name: train_images,
                         #we are not training the weights!
                         is_training.name: False})
 
