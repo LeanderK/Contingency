@@ -5,6 +5,8 @@ from __future__ import print_function
 import argparse
 import sys
 import tempfile
+import itertools
+import math
 
 import contingency_data
 
@@ -48,7 +50,7 @@ class Contingency:
             #from IPython.core.debugger import Tracer; Tracer()() 
             data = tf.convert_to_tensor(train_data, dtype=tf.float32, name="data")
             #calculate max euclidian distance in the training data
-            self.max_dist = tf.reduce_max(tf.reshape(self.pairwiseL2Norm(data, data), shape=[-1, 1]))
+            self.max_dist = self.calcMaxDist(train_data)
             self.max_image = tf.reduce_max(data,axis=0)
             self.min_image = tf.reduce_min(data,axis=0)
             #share of zero-labels in the dataset
@@ -109,7 +111,7 @@ class Contingency:
         gen_model = self.model_fn(gen_images, gen_labels, self.num_classes, is_training, True)
         distance = tf.reduce_mean(self.pairwiseL2Norm(gen_images, features), axis=1)
         adversial_fitness = gen_model['loss_op'] - (self.loss_random_prediction * self.max_dist)/distance
-        #TODO maybe switch to Adam and reset it for each (classifier-)training step? 
+        #TODO maybe switch to Adam and reset it for each s(classifier-)training step? 
         optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate_adv)
         adv_op = optimizer2.minimize(-1 * adversial_fitness,
                                     global_step=tf.train.get_global_step(),
@@ -164,4 +166,17 @@ class Contingency:
 
         summed = tf.reduce_sum(combined, axis=2)
         return tf.sqrt(summed)
+
+    def calcMaxDist(self,dataset):
+        length = dataset.shape[0]
+        subLen= 50
+        subsets = [tf.convert_to_tensor(dataset[n*subLen:(n+1)*subLen], dtype=tf.float32) for n in range(0, math.ceil(length/subLen))]
+        products = itertools.product(subsets, repeat=2)
+        print("numer of products", len(list(products)))
+        def max_l2(pairing):
+            max_val = tf.reduce_max(tf.reshape(self.pairwiseL2Norm(*pairing), shape=[-1, 1]))
+            printed = tf.Print(max_val, [max_val], "computed pairing")
+            return printed
+        results = tf.constant(list(map(max_l2, products)))
+        return tf.reduce_max(results)
     
