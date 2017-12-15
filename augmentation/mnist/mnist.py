@@ -92,9 +92,9 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
     return {'loss_op':loss_op, 'pred_op':pred_probas, 'acc_op':accuracy, 'summ_op': tf.summary.merge(summaries)}
 
 class MNistAugmentation(augmentation.Augmentation):
-    def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, aug_data):
+    def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, aug_data, gen_aug_labels):
         augmentation.Augmentation.__init__(self, learning_rate_adv, num_adversarial, num_adversarial_train
-                                        , num_input, model_fn, aug_data)
+                                        , num_input, model_fn, aug_data, gen_aug_labels)
     def mnist_max_dist(aug_data):
         return augmentation.Augmentation.calcMaxDist(aug_data.get_valid_training_data()[0], num_input)
 

@@ -212,14 +212,13 @@ class Augmentation:
         return do_gen
 
     @staticmethod
-    def gen_labels_no_class(num_classes, default_class)
+    def gen_labels_no_class(num_classes)
         """
         returns a function that generates n one-hot encoded labels with a value of 1 for 
         default class (element [0, num_classes))
         """
         def do_gen(length):
             data = np.full((length, num_classes), float(1)/num_classes, tf.float32)
-            data[np.arange(length), default_class] = 1
             return data
         return do_gen
     
