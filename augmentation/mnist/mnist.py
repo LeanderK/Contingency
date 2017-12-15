@@ -91,18 +91,18 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
 
     return {'loss_op':loss_op, 'pred_op':pred_probas, 'acc_op':accuracy, 'summ_op': tf.summary.merge(summaries)}
 
-class MNistContingency(contingency.Contingency):
+class MNistAugmentation(augmentation.Augmentation):
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, cont_data):
-        contingency.Contingency.__init__(self, learning_rate_adv, num_adversarial, num_adversarial_train
+        augmentation.Augmentation.__init__(self, learning_rate_adv, num_adversarial, num_adversarial_train
                                         , num_input, model_fn, cont_data)
     def mnist_max_dist(cont_data):
-        return contingency.Contingency.calcMaxDist(cont_data.get_valid_training_data()[0], num_input)
+        return augmentation.Augmentation.calcMaxDist(cont_data.get_valid_training_data()[0], num_input)
 
-class MNISTContData(contingency_data.ContingencyData):
+class MNISTContData(augmentation_data.AugmentationData):
     def __init__(self, num_classes):
         if num_classes > max_classes:
             raise ValueError('Max classes is ', max_classes, ' not ', num_classes)
-        contingency_data.ContingencyData.__init__(self, mnist.train.images, mnist.train.labels, mnist.test.images
+        augmentation_data.AugmentationData.__init__(self, mnist.train.images, mnist.train.labels, mnist.test.images
                                                 , mnist.test.labels, mnist.validation.images, mnist.validation.labels
                                                 , num_classes, num_input)
 
@@ -122,7 +122,7 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
         for iteration in range(num_steps):
             (training, cont_training) = cont_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
             (cont_data, cont_lbls) = model['train_fn'](iteration, session, training, cont_training)
-            cont_data_obj.add_to_contingency(cont_data, cont_lbls)
+            cont_data_obj.add_to_augmentation(cont_data, cont_lbls)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 (test_data, test_lbls) = cont_data_obj.next_test_batch(batch_size)
