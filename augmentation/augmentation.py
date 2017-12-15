@@ -9,7 +9,7 @@ import itertools
 import math
 from datetime import datetime 
 
-import contingency_data
+import augmentation_data
 
 import tensorflow as tf
 import numpy as np
@@ -17,7 +17,7 @@ from numpy import random as nprandom
 
 from sklearn.metrics import roc_curve, auc
 
-class Contingency:
+class Augmentation:
 
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, 
                 num_input, model_fn, cont_data, max_dist):
@@ -30,7 +30,7 @@ class Contingency:
             the number of adversarial examples generated per iteration
         num_adversarial_train : int
             adversarial training iterations (if used)
-        cont_data : ContingencyData
+        cont_data : AugmentationData
             the data to train on
         """
         # Training Parameters
@@ -43,12 +43,12 @@ class Contingency:
 
         self.model_fn = model_fn
 
-        self.contingency_data = cont_data
+        self.augmentation_data = cont_data
         self.num_classes = cont_data.get_num_classes()
         (train_data, train_labels) = cont_data.get_valid_training_data()
         self.max_dist = max_dist
 
-        with tf.name_scope('contingency'):
+        with tf.name_scope('augmentation'):
             #from IPython.core.debugger import Tracer; Tracer()() 
             data = tf.convert_to_tensor(train_data, dtype=tf.float32, name="data")
             #calculate max euclidian distance in the training data
@@ -58,8 +58,8 @@ class Contingency:
             share_zeros = (np.where(train_labels == 0)[0].shape[0])/(train_labels.shape[0])
             self.loss_random_prediction = -np.log(share_zeros)
 
-    def withoutContingency(self, learning_rate, features, labels, is_training):
-        with tf.name_scope('without_contingency'):
+    def withoutAugmentation(self, learning_rate, features, labels, is_training):
+        with tf.name_scope('without_augmentation'):
             model = self.model_fn(features, labels, self.num_classes
                                                 , is_training, False)
             optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
@@ -83,21 +83,21 @@ class Contingency:
                 'summ_op':model['summ_op']
             }
 
-    def withRandomContingency(self, learning_rate, features, labels, is_training):
-        with tf.name_scope('with_random_contingency'):
-            return self.internalWithContingency(learning_rate, features, labels, is_training, 0)
+    def withRandomAugmentation(self, learning_rate, features, labels, is_training):
+        with tf.name_scope('with_random_augmentation'):
+            return self.internalWithAugmentation(learning_rate, features, labels, is_training, 0)
 
-    def withContingency(self, learning_rate, features, labels, is_training):
-        with tf.name_scope('with_adversarial_contingency'):
-            return self.internalWithContingency(learning_rate, features, labels, is_training, self.num_adversarial_train)
+    def withAugmentation(self, learning_rate, features, labels, is_training):
+        with tf.name_scope('with_adversarial_augmentation'):
+            return self.internalWithAugmentation(learning_rate, features, labels, is_training, self.num_adversarial_train)
 
-    def internalWithContingency(self, learning_rate, features, labels, is_training, num_adversarial_train):
+    def internalWithAugmentation(self, learning_rate, features, labels, is_training, num_adversarial_train):
         model = self.model_fn(features, labels, self.num_classes, is_training, False)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         cont_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="cont_batch")
         cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="cont_batch_labels")
 
-        #scalar that controls contingency 
+        #scalar that controls augmentation 
         cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
         cont_model = self.model_fn(cont_batch, cont_batch_la, self.num_classes, is_training, True)
 
@@ -137,7 +137,7 @@ class Contingency:
 
             adv_images = session.run(gen_images)
             cont_img = np.concatenate((cont_img, adv_images), axis=0)
-            #TODO redo this, we can't switch contingency labels right now
+            #TODO redo this, we can't switch augmentation labels right now
             cont_labels = np.zeros(cont_img.shape[0])
 
             t = session.run([train_op], feed_dict={
@@ -177,7 +177,7 @@ class Contingency:
         print("numer of products", len(list(products)))
         def max_l2(pairing):
             (x, y) = pairing
-            max_val = tf.reduce_max(tf.reshape(Contingency.pairwiseL2Norm(x, y, num_input), shape=[-1, 1]))
+            max_val = tf.reduce_max(tf.reshape(Augmentation.pairwiseL2Norm(x, y, num_input), shape=[-1, 1]))
             return max_val
         startTime= datetime.now() 
         akk = []

@@ -2,9 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import contingency
-import contingency_data
-from augmentation import augmentation, augmentationdata
+from augmentation import augmentation, augmentation_data
 
 import argparse
 import sys
