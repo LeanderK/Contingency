@@ -7,6 +7,7 @@ import sys
 import tempfile
 import itertools
 import math
+from datetime import datetime 
 
 import contingency_data
 
@@ -19,7 +20,7 @@ from sklearn.metrics import roc_curve, auc
 class Contingency:
 
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, 
-                num_input, model_fn, cont_data):
+                num_input, model_fn, cont_data, max_dist):
         """
         Parameters
         ----------
@@ -45,12 +46,12 @@ class Contingency:
         self.contingency_data = cont_data
         self.num_classes = cont_data.get_num_classes()
         (train_data, train_labels) = cont_data.get_valid_training_data()
+        self.max_dist = max_dist
 
         with tf.name_scope('contingency'):
             #from IPython.core.debugger import Tracer; Tracer()() 
             data = tf.convert_to_tensor(train_data, dtype=tf.float32, name="data")
             #calculate max euclidian distance in the training data
-            self.max_dist = self.calcMaxDist(train_data)
             self.max_image = tf.reduce_max(data,axis=0)
             self.min_image = tf.reduce_min(data,axis=0)
             #share of zero-labels in the dataset
@@ -154,9 +155,9 @@ class Contingency:
             'summ_op': model['summ_op']
         }
 
-    def pairwiseL2Norm(self, x, y):
-        x_reshaped = tf.reshape(x, shape=[-1, 1, self.num_input])
-        y_reshaped = tf.reshape(y, shape=[1, -1, self.num_input])
+    def pairwiseL2Norm(x, y, num_input):
+        x_reshaped = tf.reshape(x, shape=[-1, 1, num_input])
+        y_reshaped = tf.reshape(y, shape=[1, -1, num_input])
         x_squared = x_reshaped*x_reshaped
         y_squared = y_reshaped*y_reshaped
         multiplied = x_reshaped * y_reshaped
@@ -168,16 +169,29 @@ class Contingency:
         summed = tf.reduce_sum(combined, axis=2)
         return tf.sqrt(summed)
 
-    def calcMaxDist(self,dataset):
+    def calcMaxDist(dataset, num_input):
         length = dataset.shape[0]
         subLen= 50
         subsets = [tf.convert_to_tensor(dataset[n*subLen:(n+1)*subLen], dtype=tf.float32) for n in range(0, math.ceil(length/subLen))]
-        products = itertools.product(subsets, repeat=2)
+        products = list(itertools.product(subsets, repeat=2))
         print("numer of products", len(list(products)))
         def max_l2(pairing):
-            max_val = tf.reduce_max(tf.reshape(self.pairwiseL2Norm(*pairing), shape=[-1, 1]))
-            printed = tf.Print(max_val, [max_val], "computed pairing")
-            return printed
-        results = tf.constant(list(map(max_l2, products)))
-        return tf.reduce_max(results)
+            (x, y) = pairing
+            max_val = tf.reduce_max(tf.reshape(Contingency.pairwiseL2Norm(x, y, num_input), shape=[-1, 1]))
+            return max_val
+        startTime= datetime.now() 
+        akk = []
+        step = 200
+        for i in range(0, len(products), step):
+            with tf.Session() as session:
+                session.run(tf.global_variables_initializer())
+                session.run(tf.tables_initializer())
+                session.run(tf.local_variables_initializer())
+                results = tf.stack(list(map(max_l2, products[i:i+step])))
+                akk.append(session.run(tf.reduce_max(results)))
+                timeElapsed=datetime.now()-startTime 
+                print("calculating max dist, i:", i, " time elapsed since start: ", timeElapsed)
+        max_dist = math.max(akk)
+        print("max dist", max_dist)
+        return max_dist
     

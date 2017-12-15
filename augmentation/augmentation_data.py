@@ -12,7 +12,7 @@ from numpy import random as nprandom
 
 from sklearn.metrics import roc_curve, auc
 
-class ContingencyData:
+class AugmentationData:
 
     def __init__(self, train_data, train_labels, test_data, test_labels, validation_data
                 , validation_labels, num_classes, num_input):
@@ -60,11 +60,11 @@ class ContingencyData:
         self.num_input = num_input
 
         #TODO max size?
-        self.contingency_data = np.empty(shape=(0, num_input))
-        self.contingency_labels = np.empty(shape=(0))
-        self.current_index_contingency = 0
+        self.augmentation_data = np.empty(shape=(0, num_input))
+        self.augmentation_labels = np.empty(shape=(0))
+        self.current_index_augmentation = 0
 
-    def next_batch(self, batch_size_training, batch_size_contingency):
+    def next_batch(self, batch_size_training, batch_size_augmentation):
         training_step = self.internal_next_batch(self.train_data_valid, self.train_labels_valid
                                         , self.current_index_train, batch_size_training)
         (d, l, new_train_index, data_train, did_reshuffle) = training_step
@@ -73,15 +73,15 @@ class ContingencyData:
             self.epoch_count += 1
             self.train_data_valid = d
             self.train_labels_valid = l
-        contingency_step = self.internal_next_batch(self.contingency_data, self.contingency_labels
-                                        , self.current_index_contingency, batch_size_contingency)
-        (c_d, c_l, new_cont_index, data_contingency, c_did_reshuffle) = contingency_step
-        self.current_index_contingency = new_cont_index
+        augmentation_step = self.internal_next_batch(self.augmentation_data, self.augmentation_labels
+                                        , self.current_index_augmentation, batch_size_augmentation)
+        (c_d, c_l, new_cont_index, data_augmentation, c_did_reshuffle) = augmentation_step
+        self.current_index_augmentation = new_cont_index
         if c_did_reshuffle:
-            self.contingency_data = c_d
-            self.contingency_labels = c_l
+            self.augmentation_data = c_d
+            self.augmentation_labels = c_l
 
-        return (data_train, data_contingency)
+        return (data_train, data_augmentation)
 
     def next_test_batch(self, batch_size_test):
         test_step = self.internal_next_batch(self.test_data_valid, self.test_labels_valid
@@ -188,13 +188,13 @@ class ContingencyData:
     def get_num_classes(self):
         return self.num_classes
 
-    def add_to_contingency(self, cont_data, cont_lables):
-        self.contingency_data = np.concatenate((self.contingency_data, cont_data), axis=0)
-        self.contingency_labels = np.concatenate((self.contingency_labels, cont_lables), axis=0)
+    def add_to_augmentation(self, cont_data, cont_lables):
+        self.augmentation_data = np.concatenate((self.augmentation_data, cont_data), axis=0)
+        self.augmentation_labels = np.concatenate((self.augmentation_labels, cont_lables), axis=0)
 
-    def reset_contingency(self):
-        self.contingency_data = np.empty(shape=(0, self.num_input))
-        self.contingency_labels = np.empty(shape=(0))
+    def reset_augmentation(self):
+        self.augmentation_data = np.empty(shape=(0, self.num_input))
+        self.augmentation_labels = np.empty(shape=(0))
 
     def generate_random(self, num_random):
         randomImages = nprandom.random((num_random, self.num_input))

@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import contingency
 import contingency_data
+from augmentation import augmentation, augmentationdata
 
 import argparse
 import sys
@@ -96,6 +97,8 @@ class MNistContingency(contingency.Contingency):
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, cont_data):
         contingency.Contingency.__init__(self, learning_rate_adv, num_adversarial, num_adversarial_train
                                         , num_input, model_fn, cont_data)
+    def mnist_max_dist(cont_data):
+        return contingency.Contingency.calcMaxDist(cont_data.get_valid_training_data()[0], num_input)
 
 class MNISTContData(contingency_data.ContingencyData):
     def __init__(self, num_classes):
