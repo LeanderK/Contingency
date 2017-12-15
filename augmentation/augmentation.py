@@ -20,7 +20,7 @@ from sklearn.metrics import roc_curve, auc
 class Augmentation:
 
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, 
-                num_input, model_fn, cont_data, max_dist):
+                num_input, model_fn, aug_data, max_dist):
         """
         Parameters
         ----------
@@ -30,7 +30,7 @@ class Augmentation:
             the number of adversarial examples generated per iteration
         num_adversarial_train : int
             adversarial training iterations (if used)
-        cont_data : AugmentationData
+        aug_data : AugmentationData
             the data to train on
         """
         # Training Parameters
@@ -43,9 +43,9 @@ class Augmentation:
 
         self.model_fn = model_fn
 
-        self.augmentation_data = cont_data
-        self.num_classes = cont_data.get_num_classes()
-        (train_data, train_labels) = cont_data.get_valid_training_data()
+        self.augmentation_data = aug_data
+        self.num_classes = aug_data.get_num_classes()
+        (train_data, train_labels) = aug_data.get_valid_training_data()
         self.max_dist = max_dist
 
         with tf.name_scope('augmentation'):
@@ -66,7 +66,7 @@ class Augmentation:
             train_op = optimizer.minimize(model['loss_op'],
                                         global_step=tf.train.get_global_step())
 
-            def trainWithout(iteration, session, training, cont_training):
+            def trainWithout(iteration, session, training, aug_training):
                 (train_images, train_labels) = training
                 t = session.run([train_op], feed_dict={
                         features.name: train_images,
@@ -94,14 +94,14 @@ class Augmentation:
     def internalWithAugmentation(self, learning_rate, features, labels, is_training, num_adversarial_train):
         model = self.model_fn(features, labels, self.num_classes, is_training, False)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        cont_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="cont_batch")
-        cont_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="cont_batch_labels")
+        aug_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="aug_batch")
+        aug_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="aug_batch_labels")
 
         #scalar that controls augmentation 
-        cont_beta = tf.placeholder(dtype=tf.float32, shape=[], name="cont_beta")
-        cont_model = self.model_fn(cont_batch, cont_batch_la, self.num_classes, is_training, True)
+        aug_beta = tf.placeholder(dtype=tf.float32, shape=[], name="aug_beta")
+        aug_model = self.model_fn(aug_batch, aug_batch_la, self.num_classes, is_training, True)
 
-        loss_with_cont = model['loss_op'] + cont_beta * cont_model['loss_op']
+        loss_with_cont = model['loss_op'] + aug_beta * aug_model['loss_op']
         train_op = optimizer.minimize(loss_with_cont,
                                     global_step=tf.train.get_global_step())
 
@@ -118,9 +118,9 @@ class Augmentation:
                                     global_step=tf.train.get_global_step(),
                                     var_list=gen_images)
 
-        def trainingContStep(iteration, session, training, cont_training):
+        def trainingContStep(iteration, session, training, aug_training):
             (train_images, train_labels) = training
-            (cont_img, cont_labels) = cont_training
+            (aug_img, aug_labels) = aug_training
 
             # generates the congingency
             randomImages = nprandom.random((self.num_adversarial, self.num_input))
@@ -136,16 +136,16 @@ class Augmentation:
                         is_training.name: False})
 
             adv_images = session.run(gen_images)
-            cont_img = np.concatenate((cont_img, adv_images), axis=0)
+            aug_img = np.concatenate((aug_img, adv_images), axis=0)
             #TODO redo this, we can't switch augmentation labels right now
-            cont_labels = np.zeros(cont_img.shape[0])
+            aug_labels = np.zeros(aug_img.shape[0])
 
             t = session.run([train_op], feed_dict={
                     features.name: train_images,
                     labels.name: train_labels,
-                    cont_batch.name: cont_img,
-                    cont_batch_la.name: cont_labels,
-                    cont_beta.name: 1,
+                    aug_batch.name: aug_img,
+                    aug_batch_la.name: aug_labels,
+                    aug_beta.name: 1,
                     is_training.name: True})  
             return (adv_images, zerolabels)
         return {

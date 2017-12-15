@@ -75,8 +75,8 @@ class AugmentationData:
             self.train_labels_valid = l
         augmentation_step = self.internal_next_batch(self.augmentation_data, self.augmentation_labels
                                         , self.current_index_augmentation, batch_size_augmentation)
-        (c_d, c_l, new_cont_index, data_augmentation, c_did_reshuffle) = augmentation_step
-        self.current_index_augmentation = new_cont_index
+        (c_d, c_l, new_aug_index, data_augmentation, c_did_reshuffle) = augmentation_step
+        self.current_index_augmentation = new_aug_index
         if c_did_reshuffle:
             self.augmentation_data = c_d
             self.augmentation_labels = c_l
@@ -188,9 +188,9 @@ class AugmentationData:
     def get_num_classes(self):
         return self.num_classes
 
-    def add_to_augmentation(self, cont_data, cont_lables):
-        self.augmentation_data = np.concatenate((self.augmentation_data, cont_data), axis=0)
-        self.augmentation_labels = np.concatenate((self.augmentation_labels, cont_lables), axis=0)
+    def add_to_augmentation(self, aug_data, aug_lables):
+        self.augmentation_data = np.concatenate((self.augmentation_data, aug_data), axis=0)
+        self.augmentation_labels = np.concatenate((self.augmentation_labels, aug_lables), axis=0)
 
     def reset_augmentation(self):
         self.augmentation_data = np.empty(shape=(0, self.num_input))

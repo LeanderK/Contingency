@@ -92,11 +92,11 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
     return {'loss_op':loss_op, 'pred_op':pred_probas, 'acc_op':accuracy, 'summ_op': tf.summary.merge(summaries)}
 
 class MNistAugmentation(augmentation.Augmentation):
-    def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, cont_data):
+    def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, aug_data):
         augmentation.Augmentation.__init__(self, learning_rate_adv, num_adversarial, num_adversarial_train
-                                        , num_input, model_fn, cont_data)
-    def mnist_max_dist(cont_data):
-        return augmentation.Augmentation.calcMaxDist(cont_data.get_valid_training_data()[0], num_input)
+                                        , num_input, model_fn, aug_data)
+    def mnist_max_dist(aug_data):
+        return augmentation.Augmentation.calcMaxDist(aug_data.get_valid_training_data()[0], num_input)
 
 class MNISTContData(augmentation_data.AugmentationData):
     def __init__(self, num_classes):
@@ -106,7 +106,7 @@ class MNISTContData(augmentation_data.AugmentationData):
                                                 , mnist.test.labels, mnist.validation.images, mnist.validation.labels
                                                 , num_classes, num_input)
 
-def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_steps): 
+def run(run_fn, learning_rate, num_adversarial, aug_data_obj, batch_size, num_steps): 
     images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
     labels = tf.placeholder(tf.float32, shape=[None], name="labels")
     is_training = tf.placeholder(tf.bool, name="is_training")
@@ -120,12 +120,12 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
         # Build the Estimator
 
         for iteration in range(num_steps):
-            (training, cont_training) = cont_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
-            (cont_data, cont_lbls) = model['train_fn'](iteration, session, training, cont_training)
-            cont_data_obj.add_to_augmentation(cont_data, cont_lbls)
+            (training, aug_training) = aug_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
+            (aug_data, aug_lbls) = model['train_fn'](iteration, session, training, aug_training)
+            aug_data_obj.add_to_augmentation(aug_data, aug_lbls)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
-                (test_data, test_lbls) = cont_data_obj.next_test_batch(batch_size)
+                (test_data, test_lbls) = aug_data_obj.next_test_batch(batch_size)
                 (summ, acc) = session.run(
                     [model['summ_op'], model['acc_op']], 
                     feed_dict={images: test_data, labels: test_lbls, is_training.name: False}
@@ -134,15 +134,15 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
                 summary_writer.add_summary(summ, iteration)
                 summary_writer.flush()
 
-        (eval_valid_im, eval_valid_la) = cont_data_obj.get_valid_training_data()
+        (eval_valid_im, eval_valid_la) = aug_data_obj.get_valid_training_data()
         #a = session.run(model['acc_op'], feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
         #print("Final Accuracy on all relabeled classes", iteration, ":", a)
         a = session.run(model['acc_op'], feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
         print("Final Accuracy on only valid classes:", a)
-        (unex_im, unex_la) = cont_data_obj.unexpected_data()
+        (unex_im, unex_la) = aug_data_obj.unexpected_data()
         a = session.run(model['acc_op'], feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
         print("Final Accuracy on unexpected data:", a)
-        (rand_im, rand_la) = cont_data_obj.generate_random(eval_valid_la.shape[0])
+        (rand_im, rand_la) = aug_data_obj.generate_random(eval_valid_la.shape[0])
         a = session.run(model['acc_op'], feed_dict={images: rand_im, labels: rand_la, is_training.name: False})
         print("Final Accuracy on random data:", a)
 
@@ -152,7 +152,7 @@ def run(run_fn, learning_rate, num_adversarial, cont_data_obj, batch_size, num_s
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
-        (data, labels) = cont_data_obj.relabel_roc()
+        (data, labels) = aug_data_obj.relabel_roc()
         pred = session.run(model['pred_op'], 
                 feed_dict={images: data, is_training.name: False})
         pred_roc = 1 - pred[:,0]
