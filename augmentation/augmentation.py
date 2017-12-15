@@ -20,7 +20,7 @@ from sklearn.metrics import roc_curve, auc
 class Augmentation:
 
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, 
-                num_input, model_fn, aug_data, max_dist):
+                num_input, model_fn, aug_data, max_dist, gen_aug_labels):
         """
         Parameters
         ----------
@@ -32,6 +32,8 @@ class Augmentation:
             adversarial training iterations (if used)
         aug_data : AugmentationData
             the data to train on
+        gen_aug_labels : int -> np.array
+            generates n labels for the augmentation data
         """
         # Training Parameters
         self.learning_rate_adv = learning_rate_adv
@@ -47,6 +49,7 @@ class Augmentation:
         self.num_classes = aug_data.get_num_classes()
         (train_data, train_labels) = aug_data.get_valid_training_data()
         self.max_dist = max_dist
+        self.gen_aug_labels = gen_aug_labels
 
         with tf.name_scope('augmentation'):
             #from IPython.core.debugger import Tracer; Tracer()() 
@@ -73,7 +76,7 @@ class Augmentation:
                         labels.name: train_labels,
                         is_training.name: True})  
                 empty_imges = np.empty(shape=(0, self.num_input))
-                empty_labels = np.empty(shape=(0))
+                empty_labels = np.empty(shape=(0, self.num_classes))
                 empty = (empty_imges, empty_labels)
                 return (empty)
             return {
@@ -123,22 +126,21 @@ class Augmentation:
             (aug_img, aug_labels) = aug_training
 
             # generates the congingency
-            randomImages = nprandom.random((self.num_adversarial, self.num_input))
-            zerolabels = np.zeros(self.num_adversarial)
-            session.run(gen_images.assign(randomImages))
+            randomInput = nprandom.random((self.num_adversarial, self.num_input))
+            gen_aug_labels = self.gen_aug_labels(self.num_adversarial)
+            session.run(gen_images.assign(randomInput))
 
             for iteration in range(num_adversarial_train):
                 #TODO does this work?
                 a = session.run(adv_op, feed_dict={
-                        gen_labels.name: zerolabels,
+                        gen_labels.name: gen_aug_labels,
                         features.name: train_images,
                         #we are not training the weights!
                         is_training.name: False})
 
             adv_images = session.run(gen_images)
             aug_img = np.concatenate((aug_img, adv_images), axis=0)
-            #TODO redo this, we can't switch augmentation labels right now
-            aug_labels = np.zeros(aug_img.shape[0])
+            aug_labels = np.concatenate((aug_labels, gen_aug_labels), axis=0)
 
             t = session.run([train_op], feed_dict={
                     features.name: train_images,
@@ -147,7 +149,7 @@ class Augmentation:
                     aug_batch_la.name: aug_labels,
                     aug_beta.name: 1,
                     is_training.name: True})  
-            return (adv_images, zerolabels)
+            return (adv_images, gen_aug_labels)
         return {
             'acc_op': model['acc_op'], 
             'pred_op': model['pred_op'], 
@@ -155,6 +157,7 @@ class Augmentation:
             'summ_op': model['summ_op']
         }
 
+    @staticmethod
     def pairwiseL2Norm(x, y, num_input):
         x_reshaped = tf.reshape(x, shape=[-1, 1, num_input])
         y_reshaped = tf.reshape(y, shape=[1, -1, num_input])
@@ -169,6 +172,7 @@ class Augmentation:
         summed = tf.reduce_sum(combined, axis=2)
         return tf.sqrt(summed)
 
+    @staticmethod
     def calcMaxDist(dataset, num_input):
         length = dataset.shape[0]
         subLen= 50
@@ -194,4 +198,28 @@ class Augmentation:
         max_dist = math.max(akk)
         print("max dist", max_dist)
         return max_dist
+
+    @staticmethod
+    def gen_labels_default_class(num_classes, default_class)
+        """
+        returns a function that generates n one-hot encoded labels with a value of 1 for 
+        default class (element [0, num_classes))
+        """
+        def do_gen(length):
+            data = np.zeros((length, num_classes))
+            data[np.arange(length), default_class] = 1
+            return data
+        return do_gen
+
+    @staticmethod
+    def gen_labels_no_class(num_classes, default_class)
+        """
+        returns a function that generates n one-hot encoded labels with a value of 1 for 
+        default class (element [0, num_classes))
+        """
+        def do_gen(length):
+            data = np.full((length, num_classes), float(1)/num_classes, tf.float32)
+            data[np.arange(length), default_class] = 1
+            return data
+        return do_gen
     

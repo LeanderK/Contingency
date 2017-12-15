@@ -61,7 +61,7 @@ class AugmentationData:
 
         #TODO max size?
         self.augmentation_data = np.empty(shape=(0, num_input))
-        self.augmentation_labels = np.empty(shape=(0))
+        self.augmentation_labels = np.empty(shape=(0, num_classes))
         self.current_index_augmentation = 0
 
     def next_batch(self, batch_size_training, batch_size_augmentation):
@@ -194,7 +194,7 @@ class AugmentationData:
 
     def reset_augmentation(self):
         self.augmentation_data = np.empty(shape=(0, self.num_input))
-        self.augmentation_labels = np.empty(shape=(0))
+        self.augmentation_labels = np.empty(shape=(0, self.num_classes))
 
     def generate_random(self, num_random):
         randomImages = nprandom.random((num_random, self.num_input))
