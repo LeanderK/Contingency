@@ -89,11 +89,11 @@ class Augmentation:
 
     def with_random_augmentation(self, learning_rate, features, labels, is_training):
         with tf.name_scope('with_random_augmentation'):
-            return self.internalWithAugmentation(learning_rate, features, labels, is_training, 0)
+            return self.internal_with_augmentation(learning_rate, features, labels, is_training, 0)
 
     def with_augmentation(self, learning_rate, features, labels, is_training):
         with tf.name_scope('with_adversarial_augmentation'):
-            return self.internalWithAugmentation(learning_rate, features, labels, is_training, self.num_adversarial_train)
+            return self.internal_with_augmentation(learning_rate, features, labels, is_training, self.num_adversarial_train)
 
     def internal_with_augmentation(self, learning_rate, features, labels, is_training, num_adversarial_train):
         model = self.model_fn(features, labels, self.num_classes, is_training, False)
@@ -137,13 +137,21 @@ class Augmentation:
             'train_fn': training_aug_step, 
             'summ_op': model['summ_op']
         }
+    
+    def only_random_augmentation(self, learning_rate, features, labels, is_training):
+        with tf.name_scope('with_random_augmentation'):
+            return self.internal_only_augmentation(learning_rate, features, labels, is_training, 0)
+
+    def only_augmentation(self, learning_rate, features, labels, is_training):
+        with tf.name_scope('with_adversarial_augmentation'):
+            return self.internal_only_augmentation(learning_rate, features, labels, is_training, self.num_adversarial_train)
 
     def internal_only_augmentation(self, learning_rate, features, labels, is_training, num_adversarial_train):
         #scalar that controls augmentation 
         aug_beta = tf.placeholder(dtype=tf.float32, shape=[], name="aug_beta")
         aug_model = self.model_fn(aug_batch, aug_batch_la, self.num_classes, is_training, True)
 
-        loss_with_cont = model['loss_op'] + aug_beta * aug_model['loss_op']
+        loss_with_cont = aug_beta * aug_model['loss_op']
         train_op = optimizer.minimize(loss_with_cont,
                                     global_step=tf.train.get_global_step())
 
