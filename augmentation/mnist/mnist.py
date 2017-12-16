@@ -107,10 +107,14 @@ class MNISTContData(augmentation_data.AugmentationData):
                                                 , mnist.test.labels, mnist.validation.images, mnist.validation.labels
                                                 , num_classes, num_input)
 
-def run(run_fn, learning_rate, num_adversarial, aug_data_obj, batch_size, num_steps): 
+def set_up():
     images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
     labels = tf.placeholder(tf.float32, shape=[None], name="labels")
     is_training = tf.placeholder(tf.bool, name="is_training")
+    return (images, labels, is_training)
+
+def run(run_fn, learning_rate, num_adversarial, aug_data_obj, batch_size, num_steps, aug_obj): 
+    (images, labels, is_training) = set_up()
     with tf.Session() as session:
         model = run_fn(features = images, learning_rate = learning_rate, labels = labels, is_training = is_training)
         summary_writer = tf.summary.FileWriter('tensorboard/train',
@@ -118,46 +122,23 @@ def run(run_fn, learning_rate, num_adversarial, aug_data_obj, batch_size, num_st
         session.run(tf.global_variables_initializer())
         session.run(tf.tables_initializer())
         session.run(tf.local_variables_initializer())
-        # Build the Estimator
 
         for iteration in range(num_steps):
             (training, aug_training) = aug_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
             (aug_data, aug_lbls) = model['train_fn'](iteration, session, training, aug_training)
-            aug_data_obj.add_to_augmentation(aug_data, aug_lbls)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 (test_data, test_lbls) = aug_data_obj.next_test_batch(batch_size)
-                (summ, acc) = session.run(
-                    [model['summ_op'], model['acc_op']], 
-                    feed_dict={images: test_data, labels: test_lbls, is_training.name: False}
-                )
-                print("Training Accuracy in iteration ", iteration, ":", acc)
-                summary_writer.add_summary(summ, iteration)
-                summary_writer.flush()
+                feed_dict = {images: test_data, labels: test_lbls, is_training.name: False}
+                summarize(session, model, feed_dict, iteration, summary_writer)
 
-        (eval_valid_im, eval_valid_la) = aug_data_obj.get_valid_training_data()
-        #a = session.run(model['acc_op'], feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
-        #print("Final Accuracy on all relabeled classes", iteration, ":", a)
-        a = session.run(model['acc_op'], feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
-        print("Final Accuracy on only valid classes:", a)
-        (unex_im, unex_la) = aug_data_obj.unexpected_data()
-        a = session.run(model['acc_op'], feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
-        print("Final Accuracy on unexpected data:", a)
-        (rand_im, rand_la) = aug_data_obj.generate_random(eval_valid_la.shape[0])
-        a = session.run(model['acc_op'], feed_dict={images: rand_im, labels: rand_la, is_training.name: False})
-        print("Final Accuracy on random data:", a)
+        return aug_obj.eval(session, model)
 
-        #TODO is this right?
-        # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html
-        # Compute ROC curve and ROC area for each class
-        fpr = dict()
-        tpr = dict()
-        roc_auc = dict()
-        (data, labels) = aug_data_obj.relabel_roc()
-        pred = session.run(model['pred_op'], 
-                feed_dict={images: data, is_training.name: False})
-        pred_roc = 1 - pred[:,0]
-        fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
-        roc_auc[0] = auc(fpr[0], tpr[0])
-
-        return (fpr, tpr, roc_auc, pred, model)
+def summarize(session, model, tf_dict, iteration, summary_writer):
+        (summ, acc) = session.run(
+            [model['summ_op'], model['acc_op']], 
+            feed_dict=tf_dict
+        )
+        print("Training Accuracy in iteration ", iteration, ":", acc)
+        summary_writer.add_summary(summ, iteration)
+        summary_writer.flush()

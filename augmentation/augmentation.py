@@ -214,7 +214,34 @@ class Augmentation:
             return (adv_images, gen_aug_labels)
 
         return gen_augmentation
-        
+
+    def eval(self, session, model):
+        (eval_valid_im, eval_valid_la) = self.augmentation_data.get_valid_training_data()
+        #a = session.run(model['acc_op'], feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
+        #print("Final Accuracy on all relabeled classes", iteration, ":", a)
+        a = session.run(model['acc_op'], feed_dict={images: eval_valid_im, labels: eval_valid_la, is_training.name: False})
+        print("Final Accuracy on only valid classes:", a)
+        (unex_im, unex_la) = self.augmentation_data.unexpected_data()
+        a = session.run(model['acc_op'], feed_dict={images: unex_im, labels: unex_la, is_training.name: False})
+        print("Final Accuracy on unexpected data:", a)
+        (rand_im, rand_la) = self.augmentation_data.generate_random(eval_valid_la.shape[0])
+        a = session.run(model['acc_op'], feed_dict={images: rand_im, labels: rand_la, is_training.name: False})
+        print("Final Accuracy on random data:", a)
+
+        #TODO is this right?
+        # from: http://scikit-learn.org/stable/auto_examples/model_selection/plot_roc.html
+        # Compute ROC curve and ROC area for each class
+        fpr = dict()
+        tpr = dict()
+        roc_auc = dict()
+        (data, labels) = self.augmentation_data.relabel_roc()
+        pred = session.run(model['pred_op'], 
+                feed_dict={images: data, is_training.name: False})
+        pred_roc = 1 - pred[:,0]
+        fpr[0], tpr[0], _ = roc_curve(labels, pred_roc)
+        roc_auc[0] = auc(fpr[0], tpr[0])
+
+        return (fpr, tpr, roc_auc, pred, model)
 
     @staticmethod
     def pairwise_l2_norm(x, y, num_input):
