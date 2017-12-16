@@ -8,8 +8,7 @@ import tempfile
 import itertools
 import math
 from datetime import datetime 
-
-import augmentation_data
+from augmentation import augmentation_data
 
 import tensorflow as tf
 import numpy as np
@@ -286,7 +285,7 @@ class Augmentation:
         return max_dist
 
     @staticmethod
-    def gen_labels_default_class(num_classes, default_class)
+    def gen_labels_default_class(num_classes, default_class):
         """
         returns a function that generates n one-hot encoded labels with a value of 1 for 
         default class (element [0, num_classes))
@@ -298,7 +297,7 @@ class Augmentation:
         return do_gen
 
     @staticmethod
-    def gen_labels_no_class(num_classes)
+    def gen_labels_no_class(num_classes):
         """
         returns a function that generates n one-hot encoded labels with a value of 1 for 
         default class (element [0, num_classes))

@@ -23,6 +23,9 @@ dropout = 0.75 # Dropout, probability to keep units
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets("/tmp/data/", one_hot=False)
 
+max_dist = 3
+#max_dist = mnist.MNISTAugmentation.mnist_max_dist(mnist.MNISTAugData(num_classes))
+
 # Create the neural network
 def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
     summaries = []
@@ -91,15 +94,15 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
 
     return {'loss_op':loss_op, 'pred_op':pred_probas, 'acc_op':accuracy, 'summ_op': tf.summary.merge(summaries)}
 
-class MNistAugmentation(augmentation.Augmentation):
+class MNISTAugmentation(augmentation.Augmentation):
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, aug_data, gen_aug_labels):
         augmentation.Augmentation.__init__(self, learning_rate_adv, num_adversarial, num_adversarial_train
-                                        , num_input, model_fn, aug_data, gen_aug_labels)
+                                        , num_input, model_fn, aug_data, max_dist, gen_aug_labels)
     @staticmethod
     def mnist_max_dist(aug_data):
-        return augmentation.Augmentation.calcMaxDist(aug_data.get_valid_training_data()[0], num_input)
+        return augmentation.Augmentation.calc_max_dist(aug_data.get_valid_training_data()[0], num_input)
 
-class MNISTContData(augmentation_data.AugmentationData):
+class MNISTAugData(augmentation_data.AugmentationData):
     def __init__(self, num_classes):
         if num_classes > max_classes:
             raise ValueError('Max classes is ', max_classes, ' not ', num_classes)
@@ -113,8 +116,9 @@ def set_up():
     is_training = tf.placeholder(tf.bool, name="is_training")
     return (images, labels, is_training)
 
-def run(run_fn, learning_rate, num_adversarial, aug_data_obj, batch_size, num_steps, aug_obj): 
+def run(run_fn, learning_rate, num_adversarial, aug_obj, batch_size, num_steps): 
     (images, labels, is_training) = set_up()
+    aug_data_obj = aug_obj.augmentation_data
     with tf.Session() as session:
         model = run_fn(features = images, learning_rate = learning_rate, labels = labels, is_training = is_training)
         summary_writer = tf.summary.FileWriter('tensorboard/train',
