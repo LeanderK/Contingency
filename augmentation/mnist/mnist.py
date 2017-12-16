@@ -95,6 +95,7 @@ class MNistAugmentation(augmentation.Augmentation):
     def __init__(self, learning_rate_adv, num_adversarial, num_adversarial_train, aug_data, gen_aug_labels):
         augmentation.Augmentation.__init__(self, learning_rate_adv, num_adversarial, num_adversarial_train
                                         , num_input, model_fn, aug_data, gen_aug_labels)
+    @staticmethod
     def mnist_max_dist(aug_data):
         return augmentation.Augmentation.calcMaxDist(aug_data.get_valid_training_data()[0], num_input)
 

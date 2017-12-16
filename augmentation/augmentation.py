@@ -70,6 +70,7 @@ class Augmentation:
                                         global_step=tf.train.get_global_step())
 
             def trainWithout(iteration, session, training, aug_training):
+                augmentation_data.next_batch()
                 (train_images, train_labels) = training
                 t = session.run([train_op], feed_dict={
                         features.name: train_images,
@@ -86,15 +87,15 @@ class Augmentation:
                 'summ_op':model['summ_op']
             }
 
-    def withRandomAugmentation(self, learning_rate, features, labels, is_training):
+    def with_random_augmentation(self, learning_rate, features, labels, is_training):
         with tf.name_scope('with_random_augmentation'):
             return self.internalWithAugmentation(learning_rate, features, labels, is_training, 0)
 
-    def withAugmentation(self, learning_rate, features, labels, is_training):
+    def with_augmentation(self, learning_rate, features, labels, is_training):
         with tf.name_scope('with_adversarial_augmentation'):
             return self.internalWithAugmentation(learning_rate, features, labels, is_training, self.num_adversarial_train)
 
-    def internalWithAugmentation(self, learning_rate, features, labels, is_training, num_adversarial_train):
+    def internal_with_augmentation(self, learning_rate, features, labels, is_training, num_adversarial_train):
         model = self.model_fn(features, labels, self.num_classes, is_training, False)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         aug_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="aug_batch")
@@ -108,6 +109,73 @@ class Augmentation:
         train_op = optimizer.minimize(loss_with_cont,
                                     global_step=tf.train.get_global_step())
 
+        gen_aug = set_up_augmentation_generation(learning_rate, features, labels, is_training)
+
+        def training_aug_step(iteration, session, batch_size_training, batch_size_augmentation):
+            (training, aug_training) = self.augmentation_data.next_batch(batch_size_training, batch_size_augmentation)
+            (train_images, train_labels) = training
+            (aug_img, aug_labels) = aug_training
+            
+            (adv_images, adv_lables) = gen_aug(num_adversarial_train)
+
+            adv_images = session.run(gen_images)
+            aug_img = np.concatenate((aug_img, adv_images), axis=0)
+            aug_labels = np.concatenate((aug_labels, adv_lables), axis=0)
+
+            t = session.run([train_op], feed_dict={
+                    features.name: train_images,
+                    labels.name: train_labels,
+                    aug_batch.name: aug_img,
+                    aug_batch_la.name: aug_labels,
+                    aug_beta.name: 1,
+                    is_training.name: True})  
+            self.augmentation_data.add_to_augmentation(adv_images, adv_lables)
+            return (adv_images, adv_lables)
+        return {
+            'acc_op': model['acc_op'], 
+            'pred_op': model['pred_op'], 
+            'train_fn': training_aug_step, 
+            'summ_op': model['summ_op']
+        }
+
+    def internal_only_augmentation(self, learning_rate, features, labels, is_training, num_adversarial_train):
+        #scalar that controls augmentation 
+        aug_beta = tf.placeholder(dtype=tf.float32, shape=[], name="aug_beta")
+        aug_model = self.model_fn(aug_batch, aug_batch_la, self.num_classes, is_training, True)
+
+        loss_with_cont = model['loss_op'] + aug_beta * aug_model['loss_op']
+        train_op = optimizer.minimize(loss_with_cont,
+                                    global_step=tf.train.get_global_step())
+
+        gen_aug = set_up_augmentation_generation(learning_rate, features, labels, is_training)
+
+        def training_aug_step(iteration, session, batch_size_training, batch_size_augmentation):
+            (training, aug_training) = self.augmentation_data.next_batch(batch_size_training, batch_size_augmentation)
+            (train_images, train_labels) = training
+            (aug_img, aug_labels) = aug_training
+
+            (adv_images, adv_lables) = gen_aug(num_adversarial_train)
+
+            aug_img = np.concatenate((aug_img, adv_images), axis=0)
+            aug_labels = np.concatenate((aug_labels, adv_lables), axis=0)
+
+            t = session.run([train_op], feed_dict={
+                    features.name: train_images,
+                    labels.name: train_labels,
+                    aug_batch.name: aug_img,
+                    aug_batch_la.name: aug_labels,
+                    aug_beta.name: 1,
+                    is_training.name: True})  
+            self.augmentation_data.add_to_augmentation(adv_images, adv_lables)
+            return (adv_images, adv_lables)
+        return {
+            'acc_op': model['acc_op'], 
+            'pred_op': model['pred_op'], 
+            'train_fn': training_aug_step, 
+            'summ_op': model['summ_op']
+        }
+    
+    def set_up_augmentation_generation(self, learning_rate, features, labels, is_training):
         #generating the contingengy
         gen_images = tf.get_variable(dtype=tf.float32, shape=[self.num_adversarial, self.num_input], name="gen_images")
         gen_labels = tf.placeholder(dtype=tf.float32, shape=[self.num_adversarial], name="gen_labels")
@@ -120,11 +188,8 @@ class Augmentation:
         adv_op = optimizer2.minimize(-1 * adversial_fitness,
                                     global_step=tf.train.get_global_step(),
                                     var_list=gen_images)
-
-        def trainingContStep(iteration, session, training, aug_training):
-            (train_images, train_labels) = training
-            (aug_img, aug_labels) = aug_training
-
+        
+        def gen_augmentation(num_adversarial_train):
             # generates the congingency
             randomInput = nprandom.random((self.num_adversarial, self.num_input))
             gen_aug_labels = self.gen_aug_labels(self.num_adversarial)
@@ -137,28 +202,14 @@ class Augmentation:
                         features.name: train_images,
                         #we are not training the weights!
                         is_training.name: False})
-
             adv_images = session.run(gen_images)
-            aug_img = np.concatenate((aug_img, adv_images), axis=0)
-            aug_labels = np.concatenate((aug_labels, gen_aug_labels), axis=0)
-
-            t = session.run([train_op], feed_dict={
-                    features.name: train_images,
-                    labels.name: train_labels,
-                    aug_batch.name: aug_img,
-                    aug_batch_la.name: aug_labels,
-                    aug_beta.name: 1,
-                    is_training.name: True})  
             return (adv_images, gen_aug_labels)
-        return {
-            'acc_op': model['acc_op'], 
-            'pred_op': model['pred_op'], 
-            'train_fn': trainingContStep, 
-            'summ_op': model['summ_op']
-        }
+
+        return gen_augmentation
+        
 
     @staticmethod
-    def pairwiseL2Norm(x, y, num_input):
+    def pairwise_l2_norm(x, y, num_input):
         x_reshaped = tf.reshape(x, shape=[-1, 1, num_input])
         y_reshaped = tf.reshape(y, shape=[1, -1, num_input])
         x_squared = x_reshaped*x_reshaped
@@ -173,7 +224,7 @@ class Augmentation:
         return tf.sqrt(summed)
 
     @staticmethod
-    def calcMaxDist(dataset, num_input):
+    def calc_max_dist(dataset, num_input):
         length = dataset.shape[0]
         subLen= 50
         subsets = [tf.convert_to_tensor(dataset[n*subLen:(n+1)*subLen], dtype=tf.float32) for n in range(0, math.ceil(length/subLen))]
@@ -181,7 +232,7 @@ class Augmentation:
         print("numer of products", len(list(products)))
         def max_l2(pairing):
             (x, y) = pairing
-            max_val = tf.reduce_max(tf.reshape(Augmentation.pairwiseL2Norm(x, y, num_input), shape=[-1, 1]))
+            max_val = tf.reduce_max(tf.reshape(Augmentation.pairwise_l2_norm(x, y, num_input), shape=[-1, 1]))
             return max_val
         startTime= datetime.now() 
         akk = []
