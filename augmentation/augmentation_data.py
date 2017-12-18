@@ -21,6 +21,8 @@ class AugmentationData:
         ----------
         num_classes : int
             the the number of classes trained on
+        train_labels : numpy-array
+            NOT one-hot encoded!!
         """
         self.train_data = train_data
         self.train_labels = train_labels
@@ -64,6 +66,14 @@ class AugmentationData:
         self.augmentation_labels = np.empty(shape=(0, num_classes))
         self.current_index_augmentation = 0
 
+    def to_one_hot(self, array):
+        if array.size == 0:
+            return np.empty(shape=(0, self.num_classes))
+        else:
+            b = np.zeros((array.size, self.num_classes))
+            b[np.arange(array.size),array] = 1
+            return b
+
     def next_batch(self, batch_size_training, batch_size_augmentation):
         training_step = self.internal_next_batch(self.train_data_valid, self.train_labels_valid
                                         , self.current_index_train, batch_size_training)
@@ -99,11 +109,12 @@ class AugmentationData:
         end = current_index + batch_size
         if end > data.shape[0]:
             (d, l, i, data_batch) = self.reshuffle(data, labels, current_index, batch_size)
-            return (d, l, i, data_batch, True)
+            (res_data, res_lbls) = data_batch
+            return (d, l, i, (res_data, self.to_one_hot(res_lbls)), True)
         else:
             res_data = data[current_index: end]
             res_lbls = labels[current_index: end]
-            return (data, labels, end, (res_data, res_lbls), False)
+            return (data, labels, end, (res_data, self.to_one_hot(res_lbls)), False)
 
     def reshuffle(self, data, labels, current_index, batch_size):
         data_length = data.shape[0]
@@ -130,7 +141,7 @@ class AugmentationData:
         indices = np.where(self.test_labels >= self.num_classes )
         relabel = np.copy(self.test_labels)
         relabel[indices] = 0
-        return (self.test_data, relabel)
+        return (self.test_data, self.to_one_hot(relabel))
 
     def relabel_roc(self):
         """
@@ -171,19 +182,19 @@ class AugmentationData:
         returns all the test-data for a single label
         """
         indices = np.where(self.test_labels == label)
-        return (self.test_data[indices], self.test_labels[indices])
+        return (self.test_data[indices], self.to_one_hot(self.test_labels[indices]))
 
     def unexpected_data(self):
         """
         returns all the relabeled data outside of the normal trained data-manifold
         """
-        return (self.test_data_invalid, self.test_labels_invalid)
+        return (self.test_data_invalid, self.to_one_hot(self.test_labels_invalid))
 
     def get_original_training_data(self):
-        return (self.train_data, self.train_labels)
+        return (self.train_data, self.to_one_hot(self.train_labels))
 
     def get_valid_training_data(self):
-        return (self.train_data_valid, self.train_labels_valid)
+        return (self.train_data_valid, self.to_one_hot(self.train_labels_valid))
 
     def get_num_classes(self):
         return self.num_classes
@@ -199,4 +210,4 @@ class AugmentationData:
     def generate_random(self, num_random):
         randomImages = nprandom.random((num_random, self.num_input))
         zerolabels = np.zeros(num_random)
-        return (randomImages, zerolabels)
+        return (randomImages, self.to_one_hot(zerolabels))

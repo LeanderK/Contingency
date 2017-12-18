@@ -86,7 +86,7 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
     #acc, acc_op = tf.metrics.accuracy(labels=labels, predictions=pred_classes)
 
     # Define loss and optimizer
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
         logits=logits, labels=tf.cast(labels, dtype=tf.int32))
     summaries.append(tf.summary.histogram("crosse-entropy", cross_entropy))
     loss_op = tf.reduce_mean(cross_entropy)
@@ -110,15 +110,15 @@ class MNISTAugData(augmentation_data.AugmentationData):
                                                 , mnist.test.labels, mnist.validation.images, mnist.validation.labels
                                                 , num_classes, num_input)
 
-def set_up():
+def set_up(aug_obj):
     images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")
-    labels = tf.placeholder(tf.float32, shape=[None], name="labels")
+    labels = tf.placeholder(tf.float32, shape=[None, aug_obj.getAugmentationData().get_num_classes()], name="labels")
     is_training = tf.placeholder(tf.bool, name="is_training")
     return (images, labels, is_training)
 
 def run(run_fn, learning_rate, num_adversarial, aug_obj, batch_size, num_steps): 
-    (images, labels, is_training) = set_up()
-    aug_data_obj = aug_obj.augmentation_data
+    (images, labels, is_training) = set_up(aug_obj)
+    aug_data_obj = aug_obj.getAugmentationData()
     with tf.Session() as session:
         model = run_fn(features = images, learning_rate = learning_rate, labels = labels, is_training = is_training)
         summary_writer = tf.summary.FileWriter('tensorboard/train',
@@ -128,15 +128,14 @@ def run(run_fn, learning_rate, num_adversarial, aug_obj, batch_size, num_steps):
         session.run(tf.local_variables_initializer())
 
         for iteration in range(num_steps):
-            (training, aug_training) = aug_data_obj.next_batch(batch_size, (batch_size - num_adversarial))
-            (aug_data, aug_lbls) = model['train_fn'](iteration, session, training, aug_training)
+            (aug_data, aug_lbls) = model['train_fn'](iteration, session, batch_size, batch_size)
             # a = session.run(accEval, feed_dict={images.name: train_im, labels.name: train_la})
             if iteration % 50 == 0:
                 (test_data, test_lbls) = aug_data_obj.next_test_batch(batch_size)
                 feed_dict = {images: test_data, labels: test_lbls, is_training.name: False}
                 summarize(session, model, feed_dict, iteration, summary_writer)
 
-        return aug_obj.eval(session, model)
+        return aug_obj.eval(session, model, images, labels, is_training)
 
 def summarize(session, model, tf_dict, iteration, summary_writer):
         (summ, acc) = session.run(

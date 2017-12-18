@@ -60,6 +60,9 @@ class Augmentation:
             share_zeros = (np.where(train_labels == 0)[0].shape[0])/(train_labels.shape[0])
             self.loss_random_prediction = -np.log(share_zeros)
 
+    def getAugmentationData(self):
+        return self.augmentation_data
+
     def withoutAugmentation(self, learning_rate, features, labels, is_training):
         with tf.name_scope('without_augmentation'):
             model = self.model_fn(features, labels, self.num_classes
@@ -68,9 +71,9 @@ class Augmentation:
             train_op = optimizer.minimize(model['loss_op'],
                                         global_step=tf.train.get_global_step())
 
-            def trainWithout(iteration, session, training, aug_training):
-                augmentation_data.next_batch()
-                (train_images, train_labels) = training
+            def trainWithout(iteration, session, batch_size_training, batch_size_augmentation):
+                (data, augmen) = self.augmentation_data.next_batch(batch_size_training, 0)
+                (train_images, train_labels) = data
                 t = session.run([train_op], feed_dict={
                         features.name: train_images,
                         labels.name: train_labels,
@@ -98,7 +101,7 @@ class Augmentation:
         model = self.model_fn(features, labels, self.num_classes, is_training, False)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         aug_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="aug_batch")
-        aug_batch_la = tf.placeholder(dtype=tf.float32, shape=[None], name="aug_batch_labels")
+        aug_batch_la = tf.placeholder(dtype=tf.float32, shape=[None, self.num_classes], name="aug_batch_labels")
 
         #scalar that controls augmentation 
         aug_beta = tf.placeholder(dtype=tf.float32, shape=[], name="aug_beta")
@@ -108,16 +111,15 @@ class Augmentation:
         train_op = optimizer.minimize(loss_with_cont,
                                     global_step=tf.train.get_global_step())
 
-        gen_aug = set_up_augmentation_generation(learning_rate, features, labels, is_training)
+        gen_aug = self.set_up_augmentation_generation(learning_rate, features, labels, is_training)
 
         def training_aug_step(iteration, session, batch_size_training, batch_size_augmentation):
             (training, aug_training) = self.augmentation_data.next_batch(batch_size_training, batch_size_augmentation)
             (train_images, train_labels) = training
             (aug_img, aug_labels) = aug_training
             
-            (adv_images, adv_lables) = gen_aug(num_adversarial_train)
+            (adv_images, adv_lables) = gen_aug(num_adversarial_train, session)
 
-            adv_images = session.run(gen_images)
             aug_img = np.concatenate((aug_img, adv_images), axis=0)
             aug_labels = np.concatenate((aug_labels, adv_lables), axis=0)
 
@@ -154,14 +156,14 @@ class Augmentation:
         train_op = optimizer.minimize(loss_with_cont,
                                     global_step=tf.train.get_global_step())
 
-        gen_aug = set_up_augmentation_generation(learning_rate, features, labels, is_training)
+        gen_aug = self.set_up_augmentation_generation(learning_rate, features, labels, is_training)
 
         def training_aug_step(iteration, session, batch_size_training, batch_size_augmentation):
             (training, aug_training) = self.augmentation_data.next_batch(batch_size_training, batch_size_augmentation)
             (train_images, train_labels) = training
             (aug_img, aug_labels) = aug_training
 
-            (adv_images, adv_lables) = gen_aug(num_adversarial_train)
+            (adv_images, adv_lables) = gen_aug(num_adversarial_train, session)
 
             aug_img = np.concatenate((aug_img, adv_images), axis=0)
             aug_labels = np.concatenate((aug_labels, adv_lables), axis=0)
@@ -188,7 +190,7 @@ class Augmentation:
         gen_labels = tf.placeholder(dtype=tf.float32, shape=[self.num_adversarial], name="gen_labels")
 
         gen_model = self.model_fn(gen_images, gen_labels, self.num_classes, is_training, True)
-        distance = tf.reduce_mean(self.pairwiseL2Norm(gen_images, features), axis=1)
+        distance = tf.reduce_mean(Augmentation.pairwise_l2_norm(gen_images, features, self.num_input), axis=1)
         adversial_fitness = gen_model['loss_op'] - (self.loss_random_prediction * self.max_dist)/distance
         #TODO maybe switch to Adam and reset it for each s(classifier-)training step? 
         optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate_adv)
@@ -196,7 +198,7 @@ class Augmentation:
                                     global_step=tf.train.get_global_step(),
                                     var_list=gen_images)
         
-        def gen_augmentation(num_adversarial_train):
+        def gen_augmentation(num_adversarial_train, session):
             # generates the congingency
             randomInput = nprandom.random((self.num_adversarial, self.num_input))
             gen_aug_labels = self.gen_aug_labels(self.num_adversarial)
@@ -214,7 +216,7 @@ class Augmentation:
 
         return gen_augmentation
 
-    def eval(self, session, model):
+    def eval(self, session, model, images, labels, is_training):
         (eval_valid_im, eval_valid_la) = self.augmentation_data.get_valid_training_data()
         #a = session.run(model['acc_op'], feed_dict={images: eval_rel_im, labels: eval_rel_la, is_training.name: False})
         #print("Final Accuracy on all relabeled classes", iteration, ":", a)
