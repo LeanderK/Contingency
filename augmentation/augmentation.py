@@ -118,7 +118,7 @@ class Augmentation:
             (train_images, train_labels) = training
             (aug_img, aug_labels) = aug_training
             
-            (adv_images, adv_lables) = gen_aug(num_adversarial_train, session)
+            (adv_images, adv_lables) = gen_aug(num_adversarial_train, session, train_images)
 
             aug_img = np.concatenate((aug_img, adv_images), axis=0)
             aug_labels = np.concatenate((aug_labels, adv_lables), axis=0)
@@ -163,7 +163,7 @@ class Augmentation:
             (train_images, train_labels) = training
             (aug_img, aug_labels) = aug_training
 
-            (adv_images, adv_lables) = gen_aug(num_adversarial_train, session)
+            (adv_images, adv_lables) = gen_aug(num_adversarial_train, session, train_images)
 
             aug_img = np.concatenate((aug_img, adv_images), axis=0)
             aug_labels = np.concatenate((aug_labels, adv_lables), axis=0)
@@ -187,7 +187,7 @@ class Augmentation:
     def set_up_augmentation_generation(self, learning_rate, features, labels, is_training):
         #generating the contingengy
         gen_images = tf.get_variable(dtype=tf.float32, shape=[self.num_adversarial, self.num_input], name="gen_images")
-        gen_labels = tf.placeholder(dtype=tf.float32, shape=[self.num_adversarial], name="gen_labels")
+        gen_labels = tf.placeholder(dtype=tf.float32, shape=[self.num_adversarial, self.num_classes], name="gen_labels")
 
         gen_model = self.model_fn(gen_images, gen_labels, self.num_classes, is_training, True)
         distance = tf.reduce_mean(Augmentation.pairwise_l2_norm(gen_images, features, self.num_input), axis=1)
@@ -198,7 +198,7 @@ class Augmentation:
                                     global_step=tf.train.get_global_step(),
                                     var_list=gen_images)
         
-        def gen_augmentation(num_adversarial_train, session):
+        def gen_augmentation(num_adversarial_train, session, train_images):
             # generates the congingency
             randomInput = nprandom.random((self.num_adversarial, self.num_input))
             gen_aug_labels = self.gen_aug_labels(self.num_adversarial)

@@ -48,6 +48,7 @@ class AugmentationData:
 
         test_indices_invalid = np.where(test_labels >= num_classes)
         self.test_data_invalid = test_data[test_indices_invalid]
+        #TODO should probably be generated
         self.test_labels_invalid = np.zeros(test_indices_invalid[0].shape[0])
 
         validation_indices_valid = np.where(validation_labels < num_classes)
@@ -70,9 +71,7 @@ class AugmentationData:
         if array.size == 0:
             return np.empty(shape=(0, self.num_classes))
         else:
-            b = np.zeros((array.size, self.num_classes))
-            b[np.arange(array.size),array] = 1
-            return b
+            return np.eye(self.num_classes)[np.array(array.astype(int)).reshape(-1)]
 
     def next_batch(self, batch_size_training, batch_size_augmentation):
         training_step = self.internal_next_batch(self.train_data_valid, self.train_labels_valid
@@ -90,8 +89,8 @@ class AugmentationData:
         if c_did_reshuffle:
             self.augmentation_data = c_d
             self.augmentation_labels = c_l
-
-        return (data_train, data_augmentation)
+        (res_data_train, res_labels_train) = data_train
+        return ((res_data_train, self.to_one_hot(res_labels_train)), data_augmentation)
 
     def next_test_batch(self, batch_size_test):
         test_step = self.internal_next_batch(self.test_data_valid, self.test_labels_valid
@@ -102,7 +101,8 @@ class AugmentationData:
             self.epoch_count += 1
             self.test_data_valid = d
             self.test_labels_valid = l
-        return data_test
+        (res_data, res_labels) = data_test
+        return (res_data, self.to_one_hot(res_labels))
 
 
     def internal_next_batch(self, data, labels, current_index, batch_size):
@@ -110,11 +110,11 @@ class AugmentationData:
         if end > data.shape[0]:
             (d, l, i, data_batch) = self.reshuffle(data, labels, current_index, batch_size)
             (res_data, res_lbls) = data_batch
-            return (d, l, i, (res_data, self.to_one_hot(res_lbls)), True)
+            return (d, l, i, (res_data, res_lbls), True)
         else:
             res_data = data[current_index: end]
             res_lbls = labels[current_index: end]
-            return (data, labels, end, (res_data, self.to_one_hot(res_lbls)), False)
+            return (data, labels, end, (res_data, res_lbls), False)
 
     def reshuffle(self, data, labels, current_index, batch_size):
         data_length = data.shape[0]

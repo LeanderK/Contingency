@@ -76,9 +76,10 @@ def model_fn(features, labels, num_classes, is_training, should_reuse):
 
     # Predictions
     pred_classes = tf.argmax(logits, axis=1)
+    real_classes = tf.argmax(labels, axis=1)
     pred_probas = tf.nn.softmax(logits)
 
-    correct_prediction = tf.equal(pred_classes, tf.cast(labels, dtype=tf.int64))
+    correct_prediction = tf.equal(pred_classes, tf.cast(real_classes, dtype=tf.int64))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
     summaries.append(tf.summary.scalar("accuracy", accuracy))
 
