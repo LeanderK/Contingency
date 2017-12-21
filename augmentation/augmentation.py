@@ -193,14 +193,14 @@ class Augmentation:
         distance = tf.reduce_mean(Augmentation.pairwise_l2_norm(gen_images, features, self.num_input), axis=1)
         adversial_fitness = gen_model['loss_op'] - (self.loss_random_prediction * self.max_dist)/distance
         #TODO maybe switch to Adam and reset it for each s(classifier-)training step? 
-        optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate_adv)
+        optimizer2 = tf.train.GradientDescentOptimizer(learning_rate=(self.learning_rate_adv))
         adv_op = optimizer2.minimize(-1 * adversial_fitness,
                                     global_step=tf.train.get_global_step(),
                                     var_list=gen_images)
         
         def gen_augmentation(num_adversarial_train, session, train_images):
             # generates the congingency
-            randomInput = nprandom.random((self.num_adversarial, self.num_input))
+            randomInput = self.min_image + nprandom.random((self.num_adversarial, self.num_input))*(self.max_image-self.min_image)
             gen_aug_labels = self.gen_aug_labels(self.num_adversarial)
             session.run(gen_images.assign(randomInput))
 
