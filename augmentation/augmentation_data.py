@@ -30,6 +30,9 @@ class AugmentationData:
         self.test_data = test_data
         self.test_labels = test_labels
 
+        self.validation_data = validation_data
+        self.validation_labels = validation_labels
+
         train_indices_valid = np.where(train_labels < num_classes)
         self.train_data_valid = train_data[train_indices_valid]
         self.train_labels_valid = train_labels[train_indices_valid]
@@ -140,6 +143,15 @@ class AugmentationData:
         """
         indices = np.where(self.test_labels >= self.num_classes )
         relabel = np.copy(self.test_labels)
+        relabel[indices] = 0
+        return (self.test_data, self.to_one_hot(relabel))
+
+    def full_validation_data(self):
+        """
+        returns the normal, valid validation data and relabeled data outside of the normal trained data-manifold
+        """
+        indices = np.where(self.validation_labels >= self.num_classes )
+        relabel = np.copy(self.validation_labels)
         relabel[indices] = 0
         return (self.test_data, self.to_one_hot(relabel))
 
