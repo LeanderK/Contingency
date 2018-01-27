@@ -23,9 +23,6 @@ dropout = 0.75 # Dropout, probability to keep units
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets("/tmp/data/", one_hot=False)
 
-max_dist = 3
-#max_dist = mnist.MNISTAugmentation.mnist_max_dist(mnist.MNISTAugData(num_classes))
-
 # Create the neural network
 def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
     summaries = []
@@ -40,12 +37,12 @@ def conv_net(x_dict, n_classes, dropout, is_training, should_reuse):
         x = tf.reshape(x, shape=[-1, 28, 28, 1])
 
         # Convolution Layer with 32 filters and a kernel size of 5
-        conv1 = tf.layers.conv2d(x, 32, 5, activation=tf.nn.relu, name='conv1')
+        conv1 = tf.layers.conv2d(x, 32, 5, activation=tf.nn.leaky_relu, name='conv1')
         # Max Pooling (down-sampling) with strides of 2 and kernel size of 2
         conv1 = tf.layers.max_pooling2d(conv1, 2, 2)
 
         # Convolution Layer with 64 filters and a kernel size of 3
-        conv2 = tf.layers.conv2d(conv1, 64, 3, activation=tf.nn.relu, name='conv2')
+        conv2 = tf.layers.conv2d(conv1, 64, 3, activation=tf.nn.leaky_relu, name='conv2')
         # Max Pooling (down-sampling) with strides of 2 and kernel size of 2
         conv2 = tf.layers.max_pooling2d(conv2, 2, 2)
 
@@ -110,6 +107,9 @@ class MNISTAugData(augmentation_data.AugmentationData):
         augmentation_data.AugmentationData.__init__(self, mnist.train.images, mnist.train.labels, mnist.test.images
                                                 , mnist.test.labels, mnist.validation.images, mnist.validation.labels
                                                 , num_classes, num_input)
+
+#max_dist = 3
+max_dist = MNISTAugmentation.mnist_max_dist(MNISTAugData(2))
 
 def set_up(aug_obj):
     images = tf.placeholder(tf.float32, shape=[None, num_input], name="images")

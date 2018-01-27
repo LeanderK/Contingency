@@ -7,6 +7,7 @@ import sys
 import tempfile
 import itertools
 import math
+import re
 from datetime import datetime 
 from augmentation import augmentation_data
 
@@ -148,6 +149,10 @@ class Augmentation:
             return self.internal_only_augmentation(learning_rate, features, labels, is_training, self.num_adversarial_train)
 
     def internal_only_augmentation(self, learning_rate, features, labels, is_training, num_adversarial_train):
+        model = self.model_fn(features, labels, self.num_classes, is_training, False)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        aug_batch = tf.placeholder(dtype=tf.float32, shape=[None, self.num_input], name="aug_batch")
+        aug_batch_la = tf.placeholder(dtype=tf.float32, shape=[None, self.num_classes], name="aug_batch_labels")
         #scalar that controls augmentation 
         aug_beta = tf.placeholder(dtype=tf.float32, shape=[], name="aug_beta")
         aug_model = self.model_fn(aug_batch, aug_batch_la, self.num_classes, is_training, True)
@@ -262,7 +267,7 @@ class Augmentation:
     @staticmethod
     def calc_max_dist(dataset, num_input):
         length = dataset.shape[0]
-        subLen= 50
+        subLen= 100
         subsets = [tf.convert_to_tensor(dataset[n*subLen:(n+1)*subLen], dtype=tf.float32) for n in range(0, math.ceil(length/subLen))]
         products = list(itertools.product(subsets, repeat=2))
         print("numer of products", len(list(products)))
@@ -282,7 +287,7 @@ class Augmentation:
                 akk.append(session.run(tf.reduce_max(results)))
                 timeElapsed=datetime.now()-startTime 
                 print("calculating max dist, i:", i, " time elapsed since start: ", timeElapsed)
-        max_dist = math.max(akk)
+        max_dist = max(akk)
         print("max dist", max_dist)
         return max_dist
 
@@ -309,3 +314,19 @@ class Augmentation:
             return data
         return do_gen
     
+    @staticmethod
+    def create_load_mapping(top_level_scope):
+        """
+        returns a dict with all the variable present where the top-level scope is replaced with
+        top_level_scope
+        """
+        variables = tf.trainable_variables()
+        map_op = lambda var: (re.sub('^(\w*)', top_level_scope, var.name), var)
+        return dict(map(map_op, variables))
+
+    @staticmethod
+    def trainable_variables_excluding(exclude_top_level_scope):
+        """
+        returns a dict where every variable is present that does not start with exclude_top_level_scope
+        """
+        return tf.trainable_variables(scope='^(?!'+exclude_top_level_scope+').*')
